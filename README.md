@@ -55,17 +55,13 @@ To try the skill in Claude Code before you release it, copy the folder into `~/.
 
 ## Get it into Spacesheep
 
-Register the repo once:
+Registering a repo opens when skills launch on Spacesheep. Until then, build your skill here, check it with `skills lint`, and release it: the releases you make now are the versions Spacesheep takes once you register.
 
-```bash
-npx -y spacesheep@latest skills add your-name/your-skill
-```
-
-The first time, Spacesheep asks you to install its GitHub App on the repo. That proves the repo is yours, and it sends each new release to Spacesheep. Private repos work the same way.
+When it opens, you register the repo once, and install Spacesheep's GitHub App on it. That proves the repo is yours, and it sends each new release to Spacesheep. Private repos work the same way.
 
 Each release becomes a new version, waiting for your approval. Nothing is installed or made public until you approve it.
 
-Spacesheep doesn't find public repos by themselves yet, so register yours. Public repos can also carry the GitHub topic `spacesheep-skill`, which Spacesheep will use to find them.
+Public repos can also carry the GitHub topic `spacesheep-skill`, which Spacesheep will use to find them.
 
 ## What a skill folder may hold
 
