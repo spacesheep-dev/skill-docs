@@ -88,6 +88,11 @@ module.exports = function ({ test, ROOT }) {
     assert.strictEqual(r.code, 0);
     assert.match(r.out, /the person wrote 4 blocks on the page, left as they wrote them: section 1: "Their words now\."; outside the sections: "My own part Mine\."; section 2: "First line from the person\."; section 2: "Second line\."\. Say so in your reply/);
     assert.doesNotMatch(r.out, /no block in the document is the person's/);
+    // Many lines: the first 8 are named, the rest counted, and the lead number is all of them.
+    const c = fresh();
+    writeAll(c.s, c.dir);
+    c.s.person((h) => h.replace(/(<h2 data-ss-id="d-s2-h"[^>]*>[\s\S]*?<\/h2>)/, "$1\n" + Array.from({ length: 11 }, (_, i) => `<p>Line ${i + 1}.</p>`).join("\n")));
+    assert.match(go(c.s, c.dir, ["done"]).out, /the person wrote 11 blocks on the page, left as they wrote them: (section 2: "Line [1-7]\."; ){7}section 2: "Line 8\."; and 3 more\. Say so in your reply/);
   });
 
   test("text marks become only their own tags", () => {

@@ -35,6 +35,7 @@ const BLANK_LIVE_LINK = path.join(__dirname, "blank-live-link.html"), BLANK_LIVE
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PLACEHOLDER = "Writing…";
 const WORDS_FAR = 600; // words no A4 page of the starter holds
+const NAMED = 8; // the person's blocks done names before "and N more", so the reply never recites a page of them
 
 // --- reading a page: elements, their ids, their spans (pure) ---
 const VOID = new Set("area base br col embed hr img input link meta param source track wbr".split(" "));
@@ -664,8 +665,10 @@ function doneOnce(ctx) {
   const blanks = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[[^\]]{1,80}\]/g) || []))];
   // The reply says what the person wrote on the page from this list, never from a guess.
   const theirs = personBlocks(html, root, L);
+  const named = theirs.slice(0, NAMED).map((b) => `${b.section === null ? "outside the sections" : "section " + b.section}: "${b.text.length > 60 ? b.text.slice(0, 60) + "…" : b.text}"`).join("; ")
+    + (theirs.length > NAMED ? `; and ${theirs.length - NAMED} more` : "");
   ctx.log(theirs.length
-    ? `the person wrote ${theirs.length} block${theirs.length === 1 ? "" : "s"} on the page, left as they wrote ${theirs.length === 1 ? "it" : "them"}: ${theirs.map((b) => `${b.section === null ? "outside the sections" : "section " + b.section}: "${b.text.length > 60 ? b.text.slice(0, 60) + "…" : b.text}"`).join("; ")}. Say so in your reply`
+    ? `the person wrote ${theirs.length} block${theirs.length === 1 ? "" : "s"} on the page, left as they wrote ${theirs.length === 1 ? "it" : "them"}: ${named}. Say so in your reply`
     : "no block in the document is the person's");
   ctx.log(blanks.length ? `ready. Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}` : "ready.");
   return 0;
