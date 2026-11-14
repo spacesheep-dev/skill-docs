@@ -157,8 +157,8 @@ module.exports = function ({ test, ROOT }) {
       assert.notStrictEqual(go(s, dir, ["outline", "T", "H1"]).code, 0, thing);
       assert.strictEqual(s.files["index.html"], before, thing);
     }
-    const blank = fakeSpace({ "index.html": EMPTY.replace("<body></body>", "<body>\n  \n</body>") }), d2 = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-"));
-    assert.strictEqual(go(blank, d2, ["start", blank.id]).code, 0, "only whitespace is blank");
+    const blank = fakeSpace({ "index.html": "  \n\t " }), d2 = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-"));
+    assert.strictEqual(go(blank, d2, ["start", blank.id]).code, 0, "a file of only whitespace is blank");
   });
 
   test("review 3.1: the page's real body decides blank, not a body quoted in a comment or a script", () => {
@@ -186,4 +186,40 @@ module.exports = function ({ test, ROOT }) {
     assert.notStrictEqual(go(s, dir, ["write", "1", "-"], "Over it.").code, 0);
     assert.strictEqual(s.files["index.html"], page);
   });
+
+  test("review 4.1: blank is a closed list of whole pages; any other page, however empty, is the person's", () => {
+    const fx = (f) => fs.readFileSync(path.join(__dirname, "fixtures", f), "utf8");
+    const starter = fs.readFileSync(path.join(ROOT, "docs/references/page.html"), "utf8");
+    const llA = fx("staging-live-link-a.html"), llB = fx("staging-live-link-b.html");
+    const tryStart = (page) => { const s = fakeSpace({ "index.html": page }), dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-")); return { s, code: go(s, dir, ["start", s.id]).code, outline: go(s, dir, ["outline", "T", "H1"]).code }; };
+    // On the list: an empty file, the starter, staging's working-on-it page with any title and description.
+    for (const page of ["", " \n ", starter, starter.replace(/\n/g, "\n\n  "), llA, llB, llA.replace(/\n/g, " \n")]) {
+      const r = tryStart(page);
+      assert.strictEqual(r.code, 0, `blank: ${page.slice(0, 60)}`);
+      assert.strictEqual(r.outline, 0);
+    }
+    // Off it: anything else, every one refused and left as it was.
+    const off = [
+      "<html><head></head><body></body><p>Person note.</p></html>",
+      '<html><head></head><body></body></html><img src="x.png">',
+      "<html><head><p>In the head.</p></head><body></body></html>",
+      "<html><head><script>draw()</script></head><body></body></html>",
+      "<html><head></head><body></body></html>A loose word",
+      EMPTY,
+      '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>docs d1</title></head><body></body></html>',
+      starter.replace("</main>", "<p>Mine.</p></main>"),
+      llA.replace('<p class="ll-what"', '<p>Mine.</p><p class="ll-what"'),
+      llA.replace(/(<p class="ll-what"[^>]*>)[^<]*/, "$1<b>Bold title</b>"),
+      llA.replace("</body>", '<img src="plan.png"></body>'),
+      llA.replace("Spacesheep is working on it", "Spacesheep is working on mine"),
+    ];
+    for (const page of off) {
+      const r = tryStart(page);
+      assert.notStrictEqual(r.code, 0, `not blank: ${page.slice(0, 80)}`);
+      assert.notStrictEqual(r.outline, 0);
+      assert.strictEqual(r.s.files["index.html"], page);
+      assert.strictEqual(r.s.saves.length, 0, "no save");
+    }
+  });
+
 };

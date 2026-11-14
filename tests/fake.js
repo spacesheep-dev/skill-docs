@@ -5,7 +5,8 @@
 
 const EMPTY = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>new</title></head><body></body></html>\n';
 
-function fakeSpace(files = { "index.html": EMPTY }) {
+// A new space is blank by the tool's list: an empty file unless a test says otherwise.
+function fakeSpace(files = { "index.html": "" }) {
   let v = 1;
   const s = {
     id: "00000000-0000-4000-8000-000000000001",

@@ -30,6 +30,7 @@ const { execFileSync, execSync } = require("child_process");
 const STARTER = path.join(__dirname, "..", "references", "page.html");
 const WRITING = path.join(__dirname, "..", "references", "writing.md");
 const OUTLINE = path.join(__dirname, "..", "references", "outline.md");
+const BLANK_LIVE_LINK = path.join(__dirname, "blank-live-link.html");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PLACEHOLDER = "Writing…";
 const WORDS_FAR = 600; // words no A4 page of the starter holds
@@ -261,16 +262,27 @@ const spaceFile = (dir) => path.join(dir, ".docs", "space");
 const spaceOf = (ctx) => { try { return fs.readFileSync(spaceFile(ctx.dir), "utf8").trim(); } catch { return ""; } };
 // A page that isn't a document from this skill: no ledger, and anything at all in its body. A short note, an image,
 // a table, an embed: each is the person's. Only an empty body is blank.
-// The page's real body, as parsed (a body quoted in a comment, a script or a title isn't one). No body, or two:
-// unsure, so the person's. An empty page is blank.
-function foreign(html) {
-  if (ledgerOf(html) || !html.trim()) return false;
-  const bodies = [];
-  walk(parse(html), (e) => { if (e.name === "body") bodies.push(e); });
-  if (bodies.length !== 1) return true;
-  const b = bodies[0];
-  return b.children.length > 0 || !!html.slice(b.openEnd, b.closeStart).replace(/<!--[\s\S]*?-->/g, "").trim();
+// Blank is a short closed list of whole pages, compared after dropping whitespace: an empty file, this skill's
+// starter before any outline, and staging's "working on it" page (live_link, saved 14 Nov 2026), whose title and
+// description are plain-text slots. Everything else is the person's page, however empty it looks: a wrong "not
+// blank" costs one question; a wrong "blank" deletes someone's work.
+const flat = (t) => String(t).replace(/\s+/g, "");
+function liveLinkSlots(html) {
+  let n = 0;
+  const one = (re, to) => { html = html.replace(re, (...m) => { n++; return to(...m); }); };
+  one(/<title>[^<]*<\/title>/, () => "<title>T</title>");
+  one(/(<meta name="description" content="Spacesheep is working on it: )[^"<]*(">)/, (m, a, b) => a + "D" + b);
+  one(/(<p class="ll-what"[^>]*>)[^<]*(<\/p>)/, (m, a, b) => a + "T" + b);
+  html = html.replace(/<p class="ll-desc"[^>]*>[^<]*<\/p>/, "");
+  return n === 3 ? html : null;
 }
+let BLANKS = null;
+function blank(html) {
+  BLANKS = BLANKS || [flat(fs.readFileSync(STARTER, "utf8")), flat(fs.readFileSync(BLANK_LIVE_LINK, "utf8"))];
+  const h = flat(html), slotted = liveLinkSlots(String(html));
+  return h === "" || h === BLANKS[0] || (slotted !== null && flat(slotted) === BLANKS[1]);
+}
+const foreign = (html) => !ledgerOf(html) && !blank(html);
 const isConflict = (e) => e && (e.code === "conflict" || /conflict/i.test(String(e.message)));
 
 function describe(html, only) {
@@ -419,7 +431,7 @@ const COMMANDS = {
     }
     if (foreign(html)) {
       ctx.io.push({ status: "Stopped: this space holds another page", stopped: true });
-      throw new Error("start: this space holds a page that isn't a document from this skill, and it's never written over. Ask the person, or start --new");
+      throw new Error("start: this space holds a page someone made, and it's never written over. Nothing changed. Ask the person: use a new page (start --new, in a new folder), or tell you what to do with theirs");
     }
     ctx.log("\n" + fs.readFileSync(OUTLINE, "utf8"));
     return 0;
@@ -434,7 +446,7 @@ const COMMANDS = {
     if (!title || !headings.length) throw new Error("outline: give the title, then every heading");
     const r = ctx.io.read(), html = r.files["index.html"] || "";
     if (ledgerOf(html)) throw new Error("outline: this space has its outline already. Write its sections; for another document, start --new in a new folder");
-    if (foreign(html)) throw new Error("outline: this space holds a page that isn't a document from this skill, and it's never written over");
+    if (foreign(html)) throw new Error("outline: this space holds a page someone made, and it's never written over. Nothing changed. Ask the person: use a new page (start --new, in a new folder), or tell you what to do with theirs");
     const page = buildPage(fs.readFileSync(STARTER, "utf8"), title, headings, pages);
     const a = ctx.io.push({ html: page });
     ctx.io.save({ parent: r.version, label: "Outline", files: [{ path: "index.html", content: page }] });
@@ -624,7 +636,7 @@ const ctx = { dir: DIR, log: (l) => console.log(l), stdin: () => fs.readFileSync
 ctx.io = {
   create(title) {
     const w = path.join(DIR, ".docs", "new"); fs.mkdirSync(w, { recursive: true });
-    fs.writeFileSync(path.join(w, "index.html"), `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title></head><body></body></html>\n`);
+    fs.writeFileSync(path.join(w, "index.html"), fs.readFileSync(STARTER, "utf8")); // the starter: blank, by the list
     const j = json(sh(["deploy", w, "--title", title, "--emoji", "📄", "--json"]));
     const id = (j.space || j).uuid || (j.space || j).id;
     console.log(`made a new space: ${(j.space || j).url || id}`);
