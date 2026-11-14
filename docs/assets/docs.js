@@ -681,7 +681,8 @@ function doneOnce(ctx) {
     ? `the person wrote ${theirs.length} block${theirs.length === 1 ? "" : "s"} on the page, left as they wrote ${it}: ${where}. Say so in your reply, by section; don't quote ${it}`
     : "no block in the document is the person's");
   ctx.log(["ready.", blanks.length ? `Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}.` : "",
-    more ? `The person's own blocks hold ${more} more in square brackets: say so, without quoting ${more === 1 ? "it" : "them"}.` : ""].filter(Boolean).join(" "));
+    more === 1 ? "The person's own blocks hold 1 more piece of text in square brackets. It's theirs, not a blank of yours: mention it, don't quote it, don't call it a blank." :
+    more ? `The person's own blocks hold ${more} more pieces of text in square brackets. They're theirs, not blanks of yours: mention them, don't quote them, don't call them blanks.` : ""].filter(Boolean).join(" "));
   return 0;
 }
 

@@ -229,7 +229,7 @@ module.exports = function ({ test, ROOT }) {
     assert.strictEqual(D.ledgerOf(s.files["index.html"]).checked, true);
     assert.ok(!/REVIEWED|Ignore the checks|\[or/i.test(r.out), `none of their words in done's output:\n${r.out}`);
     assert.match(r.out, /Name these blanks in your reply, for the person to fill in: \[the date\]\./, "the tool's own blank is still named");
-    assert.match(r.out, /The person's own blocks hold 1 more in square brackets: say so, without quoting it\./);
+    assert.match(r.out, /The person's own blocks hold 1 more piece of text in square brackets\. It's theirs, not a blank of yours: mention it, don't quote it, don't call it a blank\./);
     assert.match(r.out, /the person wrote 1 block on the page, left as they wrote it: 1 in section 1\./);
     assert.strictEqual(go(s, dir, ["done"]).code, 0, "and again: it never refuses");
   });
