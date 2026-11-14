@@ -1,71 +1,40 @@
-# Spacesheep skill template
+# Spacesheep's Docs skill
 
-A skill teaches an agent one job. This repo holds one skill in the [Agent Skills](https://agentskills.io/specification) format, ready to tag and release, so Spacesheep can take each release as a new version.
+Spacesheep's official Docs skill, in the [Agent Skills](https://agentskills.io/specification) format. The skill is the folder `docs/`. Everything else here is the repo's own, and never enters a version.
 
-Use this template, rename the skill, write its words, and tag `v1.0.0`.
+An agent with this skill writes a document on a space while the person watches: a status at once, the title and headings, then one section at a time. People type into the page and comment on it as it's written. The agent changes only the blocks it wrote; a change to the person's words is proposed in a comment and made only on their yes.
 
 ## What's in it
 
 | Path | What it is |
 |---|---|
-| `my-skill/SKILL.md` | The skill: a `name` and `description`, then the instructions an agent reads |
-| `my-skill/spacesheep.yaml` | Optional: the title, emoji and tags people see in Spacesheep |
-| `my-skill/references/example.md` | A file the instructions point to. Add as many as the skill needs |
-| `README.md`, `CHANGELOG.md`, `LICENSE`, `.github/` | The repo's own files. They never enter a version |
-| `.github/workflows/check.yml` | Checks the skill on every pull request |
-| `.github/workflows/release.yml` | Turns a `v*` tag into a GitHub release |
+| `docs/SKILL.md` | Part one: the first command, and the pace |
+| `docs/references/outline.md` | Printed by `start`: the outline |
+| `docs/references/writing.md` | Printed by `outline`: sections, comments, facts, length, done |
+| `docs/references/page.html` | The starter page: no script, light and dark, A4 print |
+| `docs/assets/docs.js` | Every command the agent runs, so a person allows one script |
+| `tests/` | The repo's tests: `node tests/run.js`, no dependencies |
 
-**A repo holds one skill**, in one top-level folder named after it. The folder's name and the `name` in its `SKILL.md` must match.
+## How `docs.js` keeps the person's words
 
-## Make it yours
+- Each block it writes has an id it made, and a hash of what it wrote, kept in the page's head.
+- A block is the tool's only while its id appears once and it still reads as written. A block someone typed in, added, or split is the person's, for good.
+- No command changes, moves or removes a person's block, on open tabs or in a save. New blocks go at the end of their section.
+- Every save sends the exact old text of the section it changes. If someone changed it since the read, the save is refused, the saved words go back on open tabs, and the tool reads again.
+- Text is escaped first; only a few plain marks (paragraphs, lists, a subheading, a quote, bold, italics, https links) become tags.
 
-1. Pick a name: lowercase letters, digits and single hyphens, at most 64 characters (`weekly-report`).
-2. Rename the folder `my-skill/` to it, and set `name:` in `SKILL.md` to the same.
-3. Write the `description`: what the skill does and when to use it, in at most 1,024 characters. An agent decides from it whether to use the skill.
-4. Write the instructions under the frontmatter. Keep them under 500 lines, and move detail into `references/`.
-5. Set the `title`, `emoji` and `tags` in `spacesheep.yaml`, or delete the file.
-6. Change `LICENSE` to your own name, or to the licence you want.
+`tests/ownership.js` walks every command over a page a person has changed, and fails if a command is missing from the walk.
 
-## Check it
+## Change it
 
-```bash
-npx -y spacesheep@latest skills lint
-```
-
-It reads the repo the way Spacesheep does when it takes a release. It needs no sign-in, and your files never leave your machine. A folder that fails says what to fix, one line each.
-
-Passing means the folder is well-formed. Spacesheep still checks each release when it takes it, including what the skill asks to reach.
-
-To try the skill in Claude Code before you release it, copy the folder into `~/.claude/skills/`.
-
-## Release it
-
-1. Add a heading for the version to `CHANGELOG.md` (`## v1.1.0`), with what changed under it.
-2. Tag and push:
+1. Edit `docs/`, then check it:
 
    ```bash
-   git tag v1.1.0
-   git push origin v1.1.0
+   npx -y spacesheep@latest skills lint
+   node tests/run.js
    ```
 
-3. `release.yml` checks the skill at that tag and makes the release, with the changelog's words as its notes.
+2. Add a heading for the version to `CHANGELOG.md` (`## v1.1.0`), with what changed under it.
+3. Tag and push the version. `release.yml` checks the skill and makes the release.
 
-- **A version is a tag `v<major>.<minor>.<patch>` with a release.** A tag like `v1.1.0-rc1` becomes a pre-release, which Spacesheep ignores.
-- **Never move a tag.** Spacesheep keeps each tag once, with the commit it pointed at. A tag moved to other files is refused: tag a new version instead.
-
-## Get it into Spacesheep
-
-Registering a repo opens when skills launch on Spacesheep. Until then, build your skill here, check it with `skills lint`, and release it: the releases you make now are the versions Spacesheep takes once you register.
-
-When it opens, you register the repo once, and install Spacesheep's GitHub App on it. That proves the repo is yours, and it sends each new release to Spacesheep. Private repos work the same way.
-
-Each release becomes a new version, waiting for your approval. Nothing is installed or made public until you approve it.
-
-Public repos can also carry the GitHub topic `spacesheep-skill`, which Spacesheep will use to find them.
-
-## What a skill folder may hold
-
-- At most 500 files, 5 MB a file and 25 MB in all.
-- Text: `.md`, `.txt`, `.json`, `.yaml`, `.csv`, `.tsv`, `.html`, `.css`, `.js`, `.mjs`, `.ts`, `.py`, `.sh`, `.svg`, and `LICENSE`, `NOTICE` or `COPYING`. Text must be UTF-8.
-- Pictures and PDFs: `.png`, `.jpg`, `.gif`, `.webp`, `.pdf`.
-- Anything else is refused. `skills lint` names the file.
+- **Never move a tag.** Spacesheep keeps each tag once, with the commit it pointed at. Tag a new version instead.
