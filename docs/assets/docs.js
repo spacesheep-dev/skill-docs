@@ -592,7 +592,7 @@ const COMMANDS = {
     if (!P) throw new Error(`apply: ${c.id.slice(0, 8)} isn't one of your proposals`);
     if (!replies.length) throw new Error(`apply: the person hasn't answered ${c.id.slice(0, 8)} yet. Wait for their yes`);
     const last = replies[replies.length - 1];
-    if (!isYes(last.body)) throw new Error(`apply: their last reply, "${words(last.body).slice(0, 80)}", isn't a plain yes, so nothing changed. If it carries a condition, make a new proposal that keeps it, and wait for their yes there; if it's a no, reply and resolve; if it's a question, answer it`);
+    if (!isYes(last.body)) throw new Error(`apply: their last reply isn't a plain yes, so nothing changed. Read it with comments. If it carries a condition, make a new proposal that keeps it, and wait for their yes there; if it's a no, reply and resolve; if it's a question, answer it`);
     // Its changes go together: each block must still read as it did when proposed, checked on one read first.
     commit(ctx, `the proposal ${c.id.slice(0, 8)}`, null, (html) => {
       const root = parse(html);
