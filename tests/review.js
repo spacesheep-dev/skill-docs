@@ -252,4 +252,14 @@ module.exports = function ({ test, ROOT }) {
     ];
     for (const [t, want] of cases) assert.strictEqual(D.blocksFromText(t)[0].html, want, t);
   });
+
+  test("review 5.3: a person's block is never changed, a mark with the tool's attributes in it included", () => {
+    const { s, dir } = doc("Dear [landlord's name].", "Two.");
+    const tool = '<mark class="blank" tabindex="0">';
+    const filled = `<p data-ss-id="d-s1-1">Dear ${tool}Mr Smith</mark>.</p>`, theirs = `<p>Theirs ${tool}personal highlight</mark>.</p>`;
+    s.person((h) => h.replace(/<p data-ss-id="d-s1-1">[\s\S]*?<\/p>/, filled).replace("</main>", `${theirs}</main>`));
+    for (const t of ["Two, again.", "Two, a third time."]) go(s, dir, ["write", "2", "-"], t);
+    assert.ok(s.files["index.html"].includes(filled), "a filled blank keeps its tint: the block is theirs");
+    assert.ok(s.files["index.html"].includes(theirs));
+  });
 };
