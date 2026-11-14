@@ -98,4 +98,18 @@ module.exports = function ({ test, ROOT }) {
     go(s, dir, ["write", "1", "-", "Writing H2"], "Two.");
     assert.deepStrictEqual(seq, ["push", "save", "status"]);
   });
+
+  test("a placeholder holds no words: \"Writing…\" is drawn only while it's empty, so words typed into it look like words", () => {
+    const s = fakeSpace(), dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-"));
+    go(s, dir, ["start", s.id]);
+    go(s, dir, ["outline", "T", "H1"]);
+    const h = s.files["index.html"];
+    assert.ok(h.includes('<p data-ss-id="d-s1-1" class="todo"></p>'), "an empty placeholder");
+    const css = h.slice(h.indexOf("<style>"), h.indexOf("</style>"));
+    assert.match(css, /\.todo:empty::before\s*\{[^}]*content:\s*"Writing…"/);
+    assert.ok(!/(^|\n)\s*\.todo\s*\{/.test(css), "no style on a placeholder someone typed into");
+    assert.match(go(s, dir, ["done"]).out, /sections 0, 1 still say "Writing…"/);
+    s.person((x) => x.replace('<p data-ss-id="d-s1-1" class="todo"></p>', '<p data-ss-id="d-s1-1" class="todo">My own words.</p>'));
+    assert.match(go(s, dir, ["blocks", "1"]).out, /d-s1-1\s+person\s+My own words\./);
+  });
 };

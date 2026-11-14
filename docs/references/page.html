@@ -29,7 +29,7 @@ li { margin: 0.25rem 0; }
 blockquote { border-left: 3px solid var(--rule); padding-left: 1rem; color: var(--soft); }
 a { color: var(--link); }
 section[data-ss-id="d-s0"] p { font-size: 1.1rem; color: var(--soft); }
-.todo { color: var(--todo); font-style: italic; }
+.todo:empty::before { content: "Writing…"; color: var(--todo); font-style: italic; }
 @media (max-width: 480px) { body { font-size: 17px; } main { padding-top: 2rem; } h1 { font-size: 1.6rem; } }
 @page { size: A4; margin: 16mm 18mm; }
 @media print {

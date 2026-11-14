@@ -222,7 +222,9 @@ function planBlock(html, id, text, { mine, sigWas }) {
 // The starter with this document's title and headings, each with a placeholder.
 function buildPage(starter, title, headings, pages) {
   const L = { v: 1, sections: headings.length, pages: pages || null, next: {}, blocks: {} };
-  const ph = { tag: "p", html: esc(PLACEHOLDER) };
+  // A placeholder holds no words: the page draws "Writing…" in it only while it's empty, so words a person types
+  // into it look like their words, with nothing of the tool's to take off.
+  const ph = { tag: "p", html: "" };
   const blk = (b, id, cls) => { L.blocks[id] = blockSig(b); return render(b, id, cls); };
   const parts = [blk({ tag: "h1", html: esc(title) }, "d-title")];
   const secs = ["", ...headings];
@@ -261,7 +263,7 @@ function describe(html, only) {
     if (!v) { out.push(`section ${n}: gone (the person removed or changed its frame)`); continue; }
     const head = byId(root, `d-s${n}-h`);
     out.push(`section ${n}${head ? ": " + words(inner(html, head)) : " (the opening)"}`);
-    for (const c of v.body) out.push(`  ${(c.id || "(no id)").padEnd(10)} ${v.mineOf(c) ? "yours " : "person"}  ${words(inner(html, c)).slice(0, 100)}`);
+    for (const c of v.body) out.push(`  ${(c.id || "(no id)").padEnd(10)} ${v.mineOf(c) ? "yours " : "person"}  ${words(inner(html, c)).slice(0, 100) || "(" + PLACEHOLDER + ")"}`);
   }
   return out;
 }
@@ -525,7 +527,7 @@ const COMMANDS = {
     const root = parse(html), left = [];
     for (let n = 0; n <= L.sections; n++) {
       const v = sectionView(html, root, L, n);
-      if (v && v.mine.some((c) => words(inner(html, c)) === PLACEHOLDER)) left.push(n);
+      if (v && v.mine.some((c) => words(inner(html, c)) === "")) left.push(n);
     }
     if (left.length) { ctx.log(`not done: section${left.length > 1 ? "s" : ""} ${left.join(", ")} still say "${PLACEHOLDER}". Write ${left.length > 1 ? "them" : "it"}, then done again`); return 1; }
     // The length the person asked for, as the page prints: over it is not done.

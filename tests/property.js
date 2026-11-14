@@ -24,15 +24,18 @@ module.exports = function ({ test, ROOT }) {
     const marks = []; // the person's words: each a unique marker, and how many times it appears
     const sectionAt = (h, at) => { let best = null; for (const m of h.matchAll(/<section data-ss-id="(d-s\d+)"/g)) if (m.index < at) best = m[1]; return best; };
     const snapshot = () => { const h = s.files["index.html"].split("</head>")[1]; return marks.map((m) => ({ m: m.m, n: h.split(m.m).length - 1, at: h.indexOf(m.m), sec: sectionAt(h, h.indexOf(m.m)) })); };
-    const personIds = () => { const h = s.files["index.html"], ids = new Set(); for (const m of marks) { const at = h.indexOf(m.m); const open = h.lastIndexOf("<", h.lastIndexOf('data-ss-id="', at) >= 0 ? at : 0); const mm = /data-ss-id="([^"]+)"/.exec(h.slice(h.lastIndexOf("<p", at), at)); if (mm) ids.add(mm[1]); } return ids; };
+    // The ids of blocks that hold the person's words.
+    const BLOCK = /(<(p|ul|h3|blockquote)(?: data-ss-id="([^"]+)")?[^>]*>)([\s\S]*?)(<\/\2>)/g;
+    const personIds = () => { const ids = new Set(); for (const m of s.files["index.html"].matchAll(BLOCK)) if (m[3] && marks.some((k) => m[4].includes(k.m))) ids.add(m[3]); return ids; };
     for (let step = 0; step < steps; step++) {
       if (r() < 0.4) {
         // The person.
-        const h = s.files["index.html"], blocks = [...h.matchAll(/<(p|ul|h3|blockquote)( data-ss-id="([^"]+)")?[^>]*>([\s\S]*?)<\/\1>/g)].filter((m) => !/^d-(title|s\d+-h)$/.test(m[3] || ""));
+        // Typed words go inside the block, between its tags, whatever it held: an empty placeholder too.
+        const h = s.files["index.html"], blocks = [...h.matchAll(BLOCK)].filter((m) => !/^d-(title|s\d+-h)$/.test(m[3] || "")).map((m) => Object.assign(m, { with: (t) => m[1] + t + m[5] }));
         if (!blocks.length) continue;
         const b = pick(blocks), kind = pick(["type", "add", "loose", "split"]), mk = `P${k++}x`;
-        if (kind === "type") { s.person((x) => x.slice(0, b.index) + b[0].replace(b[4], `${mk} typed`) + x.slice(b.index + b[0].length)); marks.splice(0, marks.length, ...marks.filter((m) => !b[4].includes(m.m))); marks.push({ m: mk }); }
-        else if (kind === "split") { s.person((x) => x.slice(0, b.index) + b[0].replace(b[4], `${mk} one`) + "\n" + b[0].replace(b[4], `${mk} two`) + x.slice(b.index + b[0].length)); marks.splice(0, marks.length, ...marks.filter((m) => !b[4].includes(m.m))); marks.push({ m: `${mk} one` }, { m: `${mk} two` }); }
+        if (kind === "type") { s.person((x) => x.slice(0, b.index) + b.with(`${mk} typed`) + x.slice(b.index + b[0].length)); marks.splice(0, marks.length, ...marks.filter((m) => !b[4].includes(m.m))); marks.push({ m: mk }); }
+        else if (kind === "split") { s.person((x) => x.slice(0, b.index) + b.with(`${mk} one`) + "\n" + b.with(`${mk} two`) + x.slice(b.index + b[0].length)); marks.splice(0, marks.length, ...marks.filter((m) => !b[4].includes(m.m))); marks.push({ m: `${mk} one` }, { m: `${mk} two` }); }
         else { const add = kind === "add" ? `<p data-ss-id="p-${mk}">${mk} added</p>` : `<p>${mk} loose</p>`; s.person((x) => x.slice(0, b.index + b[0].length) + "\n" + add + x.slice(b.index + b[0].length)); marks.push({ m: mk }); }
         continue;
       }
