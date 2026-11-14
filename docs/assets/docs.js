@@ -346,10 +346,38 @@ function propose(ctx, html, { changes, reason }) {
 
 // Read, plan, show, save: the one path every change takes. A clash (someone changed the page since the read)
 // puts the saved words back on screen where this showed others, and plans again from a new read.
+// The tool's own highlight around words that are no longer a [blank]: the person typed over it. Unwrapping it is
+// the one change the tool makes in a person's block without asking, and only when the block's words stay the same,
+// character for character: the mark's own tags go, everything inside it stays.
+const MARK_OPEN = '<mark class="blank" tabindex="0">';
+const textOnly = (h) => String(h).replace(/<[^>]*>/g, "");
+function unwrapFilled(html) {
+  const marks = new Map();
+  walk(parse(html), (e) => {
+    if (e.name !== "mark" || html.slice(e.start, e.openEnd) !== MARK_OPEN || html.slice(e.closeStart, e.end) !== "</mark>") return;
+    const inn = inner(html, e);
+    if (!/^\[[^\[\]<>\n]{1,80}\]$/.test(words(inn))) marks.set(outer(html, e), inn);
+  });
+  if (!marks.size) return null;
+  const reps = [...marks].sort((a, b) => b[0].length - a[0].length).map(([o, i]) => ({ old_string: o, new_string: i, replace_all: true }));
+  let after = html;
+  for (const r of reps) after = after.split(r.old_string).join(r.new_string);
+  return textOnly(after) === textOnly(html) ? reps : null;
+}
 function commit(ctx, what, status, plan) {
-  let shown = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  let shown = null, unwrapped = false;
+  for (let attempt = 0; attempt < 4; attempt++) {
     const r = ctx.io.read(), html = r.files["index.html"] || "";
+    if (!unwrapped && ledgerOf(html)) {
+      const reps = unwrapFilled(html);
+      unwrapped = true;
+      if (reps) {
+        // Saved only, never pushed live: a live replace could land on a line someone is typing in.
+        try { ctx.io.save({ parent: r.version, label: "Filled blanks, highlight off", replacements: reps }); ctx.log(`${reps.length} blank${reps.length === 1 ? "" : "s"} the person filled in: highlight taken off, their words unchanged`); }
+        catch (e) { if (!isConflict(e)) throw e; }
+        continue;
+      }
+    }
     let p = null, failed = null;
     try { p = plan(html); } catch (e) { failed = e; }
     if (shown) repair(ctx, html, shown, p ? p.edits : []);
