@@ -10,8 +10,8 @@
 //   node docs.js -C <folder> write <n> <file|-> ["<status>"]           section n (0 is the opening, before the
 //                                          first heading) from plain text: shown on open tabs, then saved.
 //   node docs.js -C <folder> blocks [n]    each block: its id, whose it is, its words. Only reads.
-//   node docs.js -C <folder> done          checks nothing still says "Writing…", then says it's ready. It sends
-//                                          nothing to the page then: the last section's save said "Done" there.
+//   node docs.js -C <folder> done          checks nothing still says "Writing…", the length and the blanks. When
+//                                          they pass, its save ends the run: open tabs say "Done", once.
 //
 // The agent writes text, never HTML: paragraphs split by a blank line, "- " lines a list, "1. " lines a numbered
 // list, a "### " line a subheading, "> " lines a quote, **bold**, *italics* and [words](https://link). Every
@@ -357,6 +357,39 @@ function propose(ctx, html, { changes, reason }) {
   return ctx.io.comment({ block: changes[0].block, quote: String(changes[0].before).slice(0, 2000), body }).id;
 }
 
+// After a save: open tabs wait 5 s for a status, then say "Done" and take the work card down. The run ends on
+// done's save, once it has checked the page, so until then a status goes back up after every save: the
+// section's next status while one still says "Writing…", then "Checking the page". Once done has checked the
+// page, a save is the end of its own change, and nothing goes after it.
+const CHECKING = "Checking the page";
+function afterSave(ctx, saved, status) {
+  const L = ledgerOf(saved);
+  if (!L) return;
+  if (unwritten(saved).length) { if (status) ctx.io.push({ status: status.slice(0, 200) }); return; }
+  if (L.checked) return;
+  ctx.io.push({ status: (status || CHECKING).slice(0, 200) });
+  ctx.log("every section is written. Run done next: its save ends the run, and open tabs say Done then");
+}
+
+// done's save, the run's last: the ledger records that the page passed its checks. Its live change leaves the
+// page as it is (one word of the title for itself), so open tabs patch instead of reloading, and say "Done".
+function closeRun(ctx) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = ctx.io.read(), html = r.files["index.html"] || "", L = ledgerOf(html);
+    if (!L) throw new Error("done: this space holds no document from this skill");
+    if (L.checked) return;
+    const root = parse(html), title = byId(root, "d-title");
+    const word = title && /[A-Za-z0-9]+/.exec(inner(html, title).replace(/<[^>]*>|&[^;\s]*;/g, " "));
+    const live = word ? [{ anchor: "d-title", op: "sub", old: word[0], html: word[0] }] : [];
+    const NL = Object.assign({}, L, { checked: true });
+    try {
+      ctx.io.save(Object.assign({ parent: r.version, label: "Checked", replacements: [{ old_string: LEDGER.exec(html)[0], new_string: ledgerTag(NL) }] }, live.length ? { live_patch: live } : {}));
+      return;
+    } catch (e) { if (!isConflict(e)) throw e; ctx.log("done: the page changed while you checked; reading it again"); }
+  }
+  throw new Error("done: the page kept changing; run done again");
+}
+
 // Read, plan, show, save: the one path every change takes. A clash (someone changed the page since the read)
 // puts the saved words back on screen where this showed others, and plans again from a new read.
 function commit(ctx, what, status, plan) {
@@ -382,12 +415,7 @@ function commit(ctx, what, status, plan) {
       continue;
     }
     ctx.log(`${what}: ${p.edits.length} change${p.edits.length === 1 ? "" : "s"}, saved`);
-    // A save says "Done" on open tabs and takes the work card down. While a section still says "Writing…" the
-    // work goes on, so the status goes back up. Once every section is written, this save is the end: nothing
-    // goes after it, so "Done" is the last thing the card says.
-    const saved = p.replacements.reduce((h, x) => h.replace(x.old_string, () => x.new_string), html);
-    if (status && unwritten(saved).length) ctx.io.push({ status: status.slice(0, 200) });
-    else if (!unwritten(saved).length) ctx.log("every section is written: open tabs say Done. Run done next");
+    afterSave(ctx, p.replacements.reduce((h, x) => h.replace(x.old_string, () => x.new_string), html), status);
     return;
   }
   throw new Error(`${what} kept changing under you; run blocks and try again`);
@@ -540,6 +568,7 @@ const COMMANDS = {
       NL.proposals[cid] = { changes: [{ block: id, sig: sig(html, el), text: String(text) }] };
       try {
         ctx.io.save({ parent: r.version, label: `Proposal on ${id}`, replacements: [{ old_string: LEDGER.exec(html)[0], new_string: ledgerTag(NL) }] });
+        afterSave(ctx, html.replace(LEDGER.exec(html)[0], () => ledgerTag(NL)), null);
         ctx.log(`proposed on ${id}: comment ${cid.slice(0, 8)}. Nothing changes until the person answers yes there; then apply ${cid.slice(0, 8)}`);
         return 0;
       } catch (e) { if (!isConflict(e)) throw e; ctx.io.resolve(cid); }
@@ -606,9 +635,11 @@ const COMMANDS = {
     if (alt.length) { ctx.log(`not done: ${alt.join(", ")} ${alt.length === 1 ? "is an alternative" : "are alternatives"} inside a blank. A blank is one value to fill in: write it as one, like [alone, or with whom], then done again`); return 1; }
     const open = ctx.io.comments().filter((c) => !c.reply_to && !c.resolved && !(L.proposals || {})[c.id]);
     if (open.length) ctx.log(`${open.length} open comment${open.length === 1 ? "" : "s"} on the page: run comments, and answer them before you reply`);
-    // After a save, nothing is sent: its "Done" is the last thing the card says. A card a status left up (start
-    // on a finished document, a write that changed nothing) comes down with an empty status instead.
-    if (cardUp(ctx)) ctx.io.push({ status: "" });
+    // Ready: the run ends on one save, and nothing goes after it, so open tabs say "Done" once. On a page done
+    // has checked before, a card a status left up (start on a finished document) comes down with an empty
+    // status instead.
+    if (!L.checked) { closeRun(ctx); ctx.log("checked and saved: open tabs say Done. Send nothing more to the page"); }
+    else if (cardUp(ctx)) ctx.io.push({ status: "" });
     const blanks = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[[^\]]{1,80}\]/g) || []))];
     ctx.log(blanks.length ? `ready. Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}` : "ready.");
     return 0;

@@ -80,6 +80,9 @@ Never change a block a comment isn't about.
 
 It checks that no section still says "Writing…", prints the page as A4 and counts it
 against `--pages`, and lists the bracketed blanks. If it says not done, fix what it names
-(over length: shorten sections with `write`), then `done` again. Say a length only as
-`done` counted it. Then reply to the person in two or three lines: what the document
-holds, the blanks for them to fill in, and anything you'd change in words they typed.
+(over length: shorten sections with `write`), then `done` again. Until `done` says ready,
+the page shows "Checking the page", so any change you want to make goes in before it. When
+it says ready, its save has ended the run and the page says "Done": send nothing more to
+the page. Say a length only as `done` counted it. Then reply to the person in two or three
+lines: what the document holds, the blanks for them to fill in, and anything you'd change
+in words they typed.
