@@ -14,8 +14,9 @@ it's empty, it prints how to write the outline, the next command. When it holds 
 document already, it lists its blocks and prints the rest of this skill.
 
 **The person watches the page fill in.** The status is your first command, ahead of all
-thinking; the headings follow within 30 seconds, and a new section at least every 45. Plan one section, write it, then plan the
-next: never plan the whole document before its first section goes in.
+thinking; the headings follow within 30 seconds, and a new section at least every 45.
+Plan one section, write it, then plan the next: never plan the whole document before its
+first section goes in.
 
 You write text, never the page: `docs.js` turns it into the page, shows it on every open
 tab and saves it. Never deploy, push or edit the page any other way.
