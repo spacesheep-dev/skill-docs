@@ -39,8 +39,28 @@ People can type into the page while you write. `docs.js` keeps what they type:
 - Read theirs before you write that section again: `node docs.js -C <folder> blocks <n>`
   lists each block, whose it is, and its words. Don't repeat what they wrote, and don't
   write around it to undo it.
-- To change their words, ask: say in your reply exactly what you would change and why.
-  Never retype their block as yours.
+- To change their words, ask them: `propose` (below). Never retype their block as yours.
+
+## Comments become edits
+
+People comment on a paragraph to ask for a change. A comment that mentions you reaches
+you; before `done`, and whenever they say they've commented, list them:
+
+    node docs.js -C <folder> comments
+
+Each open thread shows its id, the block it's on and whose block that is, and what they
+asked. For each, in turn:
+
+- **On your block, or the whole page:** change only what it asks. `edit <block> -` with
+  the block's new text (a heredoc, as for `write`), or `write <n>` for a section. Then
+  `reply <id> "<what you changed, in a few words>" --resolve`.
+- **On the person's block:** `propose <block> -` with the words you'd put there. That
+  pins your wording beside theirs and changes nothing. When their reply says yes,
+  `apply <id>`: it makes the change only if their block still reads as it did, and
+  resolves the thread. If they changed it since, propose again. A no: reply, and resolve.
+- **A question:** `reply <id> "<the answer>"`, and leave it open for them.
+
+Never change a block a comment isn't about.
 
 ## Facts and length
 

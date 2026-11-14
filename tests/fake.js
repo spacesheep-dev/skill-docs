@@ -10,7 +10,7 @@ function fakeSpace(files = { "index.html": EMPTY }) {
   const s = {
     id: "00000000-0000-4000-8000-000000000001",
     files: Object.assign({}, files),
-    pushes: [], saves: [], statuses: [],
+    pushes: [], saves: [], statuses: [], comments: [],
     beforeSave: null, // a person's change that lands between the tool's read and its save, once
     head: () => "v" + v,
     io: {
@@ -37,7 +37,16 @@ function fakeSpace(files = { "index.html": EMPTY }) {
         return { version: "v" + v };
       },
       pdfPages() { return s.pages || 1; },
+      comments() { return JSON.parse(JSON.stringify(s.comments)); },
+      comment(body) {
+        const c = Object.assign({ id: `c${String(s.comments.length + 1).padStart(7, "0")}-0000-4000-8000-000000000000`, block: "", quote: "", resolved: false }, body);
+        if (body.reply_to) c.reply_to = { id: body.reply_to };
+        s.comments.push(c); return JSON.parse(JSON.stringify(c));
+      },
+      resolve(id) { const c = s.comments.find((x) => x.id === id); if (!c) throw new Error("not_found"); c.resolved = true; return {}; },
     },
+    // A person's comment, pinned to a block or on the whole page, or a reply in a thread.
+    say(body) { return s.io.comment(body); },
     // A person's edit on the saved page, as the room saves it: a new version.
     person(fn) { s.files["index.html"] = fn(s.files["index.html"]); v++; },
   };

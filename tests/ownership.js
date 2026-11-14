@@ -28,7 +28,7 @@ module.exports = function ({ test, ROOT }) {
     return close > open ? null : best;
   };
   // The commands every test below must cover: a new command fails this until it is in the walk.
-  const WALKED = ["start", "outline", "write", "blocks", "done"];
+  const WALKED = ["start", "outline", "write", "blocks", "done", "edit", "comments", "reply", "propose", "apply"];
 
   test("every command the tool has is in the person's-block walk", () => {
     assert.deepStrictEqual(Object.keys(D.COMMANDS).sort(), WALKED.slice().sort());
@@ -86,13 +86,37 @@ module.exports = function ({ test, ROOT }) {
       ["outline", "Another title", "Another heading"],
       ["done"],
     ];
+    // The person asks for changes in comments: on their own typed block, on the tool's block, on the whole page.
+    const onTheirs = s.say({ block: "d-s1-1", quote: "Our cat stays with a friend.", body: "Shorten this" });
+    const onMine = s.say({ block: "d-s0-1", body: "Warmer, please" });
+    s.say({ body: "Looks good overall" });
+    const sid = (c) => c.id.slice(0, 8);
+    steps.splice(steps.length - 1, 0,
+      ["comments"],
+      ["edit", "d-s0-1", "-", "A warm, short note asking for your consent to sublet."],
+      ["edit", "d-s1-1", "-", "Rewritten over the person's words."],
+      ["edit", "p-1", "-", "Rewritten over the person's added block."],
+      ["edit", "d-s3-1", "-", "Rewritten over the split block."],
+      ["reply", sid(onMine), "Made it warmer.", "--resolve"],
+      ["propose", "d-s1-1", "-", "Our cat stays with a friend nearby."],
+      ["propose", "p-1", "-", "I'd like to say this first."],
+      ["apply", "PROPOSAL"],
+      ["reply", sid(onTheirs), "I've proposed a shorter line."],
+    );
+    let proposal = null;
     for (const st of steps) {
-      const [cmd, ...rest] = st;
-      const stdin = cmd === "write" ? rest.pop() : null;
+      let [cmd, ...rest] = st;
+      if (cmd === "apply") rest = [proposal ? proposal.slice(0, 8) : "none"];
+      const stdin = (cmd === "write" || cmd === "edit" || cmd === "propose") ? rest.pop() : null;
       const lines = [];
-      D.run({ io: s.io, dir, log: (l) => lines.push(String(l)), stdin: () => stdin }, [cmd, ...rest]);
+      const code = D.run({ io: s.io, dir, log: (l) => lines.push(String(l)), stdin: () => stdin }, [cmd, ...rest]);
+      if (cmd === "edit" && rest[0] !== "d-s0-1") assert.notStrictEqual(code, 0, `edit ${rest[0]}: refused, it's the person's`);
+      if (cmd === "apply") assert.notStrictEqual(code, 0, "apply with no yes: refused");
+      if (cmd === "propose" && !proposal) { const m = /comment (\w{8})/.exec(lines.join("\n")); proposal = m && s.comments.find((c) => c.id.startsWith(m[1])).id; }
       check(st.slice(0, 2).join(" "));
     }
+    assert.ok(proposal, "a proposal was made");
+    assert.ok(page(s).includes("A warm, short note"), "the tool's own block took the comment's edit");
     // The tool's own words went in around them.
     assert.ok(page(s).includes("I am asking to sublet for six months."));
     assert.ok(page(s).includes("I will be working abroad."));

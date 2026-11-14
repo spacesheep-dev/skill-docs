@@ -164,6 +164,37 @@ function planWrite(html, n, text) {
   return { edits, replacements, kept, changed: edits.length, ledger: NL };
 }
 
+// One block from text: the first block of the text takes its place and its id, the rest go right after it, and
+// empty text removes it. mine: the block must be the tool's. sigWas: the block must still read as it did then
+// (a proposal the person said yes to); it stays theirs after.
+function planBlock(html, id, text, { mine, sigWas }) {
+  const L = ledgerOf(html);
+  if (!L) throw new Error("this page has no ledger: it isn't a document from this skill");
+  const root = parse(html), el = byId(root, id);
+  if (!el) throw new Error(`no block ${id}, or it appears twice: run blocks`);
+  const sec = el.parent;
+  const m = sec && sec.id && /^d-s(\d+)$/.exec(sec.id);
+  if (!m || byId(root, sec.id) !== sec || id === `${sec.id}-h`) throw new Error(`${id} isn't a block in one of the document's sections`);
+  const key = sec.id, NL = JSON.parse(JSON.stringify(L));
+  NL.next[key] = NL.next[key] || 1;
+  if (mine && !(L.blocks[id] && sig(html, el) === L.blocks[id] && idCounts(root)[id] === 1)) throw new Error(`${id} is the person's: propose the change instead`);
+  if (sigWas && sig(html, el) !== sigWas) throw new Error(`${id} changed since you proposed: read it with blocks, and propose again`);
+  const news = blocksFromText(text), edits = [];
+  let rep;
+  if (!news.length) {
+    let end = el.end; if (html[end] === "\n") end++;
+    rep = [el.start, end, ""]; edits.push({ anchor: id, op: "remove" }); delete NL.blocks[id];
+  } else {
+    const first = render(news[0], id), rest = news.slice(1).map((b) => { const nid = `${key}-${NL.next[key]++}`; if (mine) NL.blocks[nid] = blockSig(b); return render(b, nid); });
+    if (mine) NL.blocks[id] = blockSig(news[0]);
+    rep = [el.start, el.end, [first, ...rest].join("\n")];
+    edits.push({ anchor: id, op: "replace", html: first });
+    if (rest.length) edits.push({ anchor: id, op: "insert_after", html: rest.join("\n") });
+  }
+  const secOld = outer(html, sec), secNew = secOld.slice(0, rep[0] - sec.start) + rep[2] + secOld.slice(rep[1] - sec.start);
+  return { edits, replacements: [{ old_string: secOld, new_string: secNew }, { old_string: LEDGER.exec(html)[0], new_string: ledgerTag(NL) }], kept: [], ledger: NL };
+}
+
 // The starter with this document's title and headings, each with a placeholder.
 function buildPage(starter, title, headings, pages) {
   const L = { v: 1, sections: headings.length, pages: pages || null, next: {}, blocks: {} };
@@ -209,6 +240,60 @@ function describe(html, only) {
     for (const c of v.body) out.push(`  ${(c.id || "(no id)").padEnd(10)} ${v.mineOf(c) ? "yours " : "person"}  ${words(inner(html, c)).slice(0, 100)}`);
   }
   return out;
+}
+
+// Text for a block or a section: a file in the folder, or - for stdin.
+function textArg(ctx, src, cmd) {
+  if (!src) throw new Error(`${cmd}: give a file with the text, or - to read it from stdin`);
+  return src === "-" ? ctx.stdin() : fs.readFileSync(path.resolve(ctx.dir, src), "utf8");
+}
+// Comments the tool writes carry this, so its own are told from the person's (both post as the person's account).
+const AGENT = "Agent: ";
+const byAgent = (c) => String(c.body || "").startsWith(AGENT);
+function findComment(ctx, ref) {
+  if (!ref) throw new Error("give the comment's id: comments lists them");
+  const hits = ctx.io.comments().filter((c) => !c.reply_to && c.id.startsWith(ref));
+  if (hits.length !== 1) throw new Error(`no single open comment starts with ${ref}: comments lists them`);
+  return hits[0];
+}
+// The one place a change to the person's words is asked for. Today a comment pinned to their block; when pages
+// have suggestions, only this changes.
+function propose(ctx, block, old, text) {
+  const body = `${AGENT}I'd change this to:\n\n${String(text).trim().split("\n").map((l) => "> " + l).join("\n")}\n\nReply yes to make the change, or say what you'd rather.`;
+  return ctx.io.comment({ block, quote: old.slice(0, 2000), body }).id;
+}
+// Read, plan, show, save: the one path every change takes. A clash (someone changed the page since the read)
+// puts the saved words back on screen where this showed others, and plans again from a new read.
+function commit(ctx, what, status, plan) {
+  let shown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = ctx.io.read(), html = r.files["index.html"] || "";
+    if (shown) {
+      const root = parse(html), fix = [];
+      for (const e of shown) {
+        if (e.op === "replace") { const el = byId(root, e.anchor); if (el && outer(html, el) !== e.html) fix.push({ anchor: e.anchor, op: "replace", html: outer(html, el) }); }
+        else if (e.op === "append_into" || e.op === "insert_after") for (const m of e.html.matchAll(/data-ss-id="([^"]+)"/g)) if (!byId(root, m[1])) fix.push({ anchor: m[1], op: "remove" });
+      }
+      if (fix.length) { ctx.io.push({ edits: fix }); ctx.log(`someone changed the page while you wrote: open tabs show the saved words again (${fix.length} block${fix.length === 1 ? "" : "s"})`); }
+    }
+    const p = plan(html);
+    if (p.kept && p.kept.length) ctx.log(`the person changed ${p.kept.join(", ")}: theirs now, left as they wrote it. Your words went around them; to change theirs, propose`);
+    if (!p.edits.length && !(p.kept && p.kept.length)) { if (status) ctx.io.push({ status }); ctx.log(`${what}: nothing changed`); return; }
+    if (p.edits.length) {
+      const a = ctx.io.push(Object.assign({ edits: p.edits }, status ? { status: status.slice(0, 200) } : {}));
+      shown = p.edits;
+      if (a && a.tabs_open !== undefined) ctx.log(`shown on ${a.tabs_open} open tab${a.tabs_open === 1 ? "" : "s"}`);
+    } else if (status) ctx.io.push({ status });
+    try {
+      ctx.io.save({ parent: r.version, label: what[0].toUpperCase() + what.slice(1), replacements: p.replacements, live_patch: p.edits });
+      ctx.log(`${what}: ${p.edits.length} change${p.edits.length === 1 ? "" : "s"}, saved`);
+      return;
+    } catch (e) {
+      if (!isConflict(e)) throw e;
+      ctx.log(`${what}: the page changed while you wrote; reading it again`);
+    }
+  }
+  throw new Error(`${what} kept changing under you; run blocks and try again`);
 }
 
 const COMMANDS = {
@@ -267,38 +352,93 @@ const COMMANDS = {
   write(ctx, args) {
     const n = Number(args[0]);
     if (!Number.isInteger(n) || n < 0) throw new Error("write: give the section's number (0 is the opening), then a file or - for stdin");
-    const src = args[1];
-    if (!src) throw new Error("write: give a file with the section's text, or - to read it from stdin");
-    const text = src === "-" ? ctx.stdin() : fs.readFileSync(path.resolve(ctx.dir, src), "utf8");
-    const status = plain("status", args[2]);
-    let shown = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const r = ctx.io.read(), html = r.files["index.html"] || "";
-      const p = planWrite(html, n, text);
-      if (p.kept.length) ctx.log(`the person changed ${p.kept.join(", ")}: theirs now, left as they wrote it. Your words went around them; to change theirs, propose`);
-      // A retry after a clash: blocks shown on open tabs that are the person's now get their words back.
-      if (shown) {
-        const root = parse(html), L = ledgerOf(html), fix = [];
-        for (const e of shown) {
-          const el = e.op === "replace" && byId(root, e.anchor);
-          if (el && !(L.blocks[e.anchor] && sig(html, el) === L.blocks[e.anchor])) fix.push({ anchor: e.anchor, op: "replace", html: outer(html, el) });
-        }
-        if (fix.length) { ctx.io.push({ edits: fix }); ctx.log(`a person changed ${fix.map((f) => f.anchor).join(", ")} while you wrote: their words are back on screen and kept`); }
-      }
-      if (!p.changed && !p.kept.length) { if (status) ctx.io.push({ status }); ctx.log(`section ${n}: nothing changed`); return 0; }
-      const body = Object.assign({ edits: p.edits }, status ? { status: status.slice(0, 200) } : {});
-      if (p.edits.length) { const a = ctx.io.push(body); shown = p.edits; if (a && a.tabs_open !== undefined) ctx.log(`shown on ${a.tabs_open} open tab${a.tabs_open === 1 ? "" : "s"}`); }
-      else if (status) ctx.io.push({ status });
-      try {
-        ctx.io.save({ parent: r.version, label: `Section ${n}`, replacements: p.replacements, live_patch: p.edits });
-        ctx.log(`section ${n}: ${p.edits.length} change${p.edits.length === 1 ? "" : "s"}, saved`);
-        return 0;
-      } catch (e) {
-        if (!isConflict(e)) throw e;
-        ctx.log(`section ${n}: a person changed the page while you wrote; reading it again`);
-      }
+    const text = textArg(ctx, args[1], "write");
+    commit(ctx, `section ${n}`, plain("status", args[2]), (html) => planWrite(html, n, text));
+    return 0;
+  },
+
+  // One block of yours, changed from text: a comment's ask, a fix. The person's blocks are refused: propose.
+  edit(ctx, args) {
+    const id = plain("block", args[0]);
+    if (!id) throw new Error("edit: give the block's id (blocks lists them), then a file or - for stdin");
+    const text = textArg(ctx, args[1], "edit");
+    commit(ctx, id, plain("status", args[2]), (html) => planBlock(html, id, text, { mine: true }));
+    return 0;
+  },
+
+  // The open comment threads: on whose block, what they ask, the replies, and your proposals waiting.
+  comments(ctx) {
+    const html = ctx.io.read().files["index.html"] || "", L = ledgerOf(html) || { blocks: {}, proposals: {} };
+    const all = ctx.io.comments(), root = parse(html), counts = idCounts(root);
+    const top = all.filter((c) => !c.reply_to && !c.resolved);
+    if (!top.length) { ctx.log("no open comments"); return 0; }
+    for (const c of top) {
+      const el = c.block ? byId(root, c.block) : null;
+      const whose = !c.block ? "the whole page" : !el ? `${c.block}, gone` : (L.blocks[c.block] && counts[c.block] === 1 && sig(html, el) === L.blocks[c.block]) ? `${c.block}, yours` : `${c.block}, the person's`;
+      const prop = (L.proposals || {})[c.id];
+      ctx.log(`${c.id.slice(0, 8)}  ${prop ? "your proposal" : "comment"} on ${whose}${c.quote ? `, quoting "${words(c.quote).slice(0, 80)}"` : ""}`);
+      ctx.log(`          ${byAgent(c) ? "you" : "they"}: ${words(c.body).slice(0, 300)}`);
+      for (const r of all.filter((x) => x.reply_to && x.reply_to.id === c.id)) ctx.log(`          ${byAgent(r) ? "you" : "they"}: ${words(r.body).slice(0, 300)}`);
     }
-    throw new Error(`write: section ${n} kept changing under you; run blocks ${n} and write it again`);
+    return 0;
+  },
+
+  // A reply in a comment's thread, from you; --resolve closes the thread once its ask is done.
+  reply(ctx, args) {
+    const resolve = args.includes("--resolve"), rest = args.filter((a) => a !== "--resolve");
+    const c = findComment(ctx, rest[0]);
+    const text = rest[1] === "-" ? ctx.stdin() : rest[1];
+    if (!text || !String(text).trim()) throw new Error("reply: give the comment, then the reply's words");
+    ctx.io.comment({ reply_to: c.id, body: AGENT + String(text).trim() });
+    if (resolve) ctx.io.resolve(c.id);
+    ctx.log(`replied${resolve ? " and resolved" : ""}`);
+    return 0;
+  },
+
+  // A change to the person's words, asked for: a comment pinned to their block, quoting it. Nothing changes yet.
+  propose(ctx, args) {
+    const id = plain("block", args[0]);
+    if (!id) throw new Error("propose: give the person's block id, then a file or - for stdin with the words you'd put there");
+    const text = textArg(ctx, args[1], "propose");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const r = ctx.io.read(), html = r.files["index.html"] || "", L = ledgerOf(html);
+      if (!L) throw new Error("propose: this space holds no document from this skill");
+      const root = parse(html), el = byId(root, id);
+      if (!el) throw new Error(`propose: no block ${id}, or it appears twice: run blocks`);
+      if (L.blocks[id] && sig(html, el) === L.blocks[id] && idCounts(root)[id] === 1) throw new Error(`propose: ${id} is yours, not the person's: change it with edit`);
+      if (!blocksFromText(text).length) throw new Error("propose: give the words you'd put in its place");
+      const cid = propose(ctx, id, words(inner(html, el)), text);
+      const NL = JSON.parse(JSON.stringify(L));
+      NL.proposals = NL.proposals || {};
+      NL.proposals[cid] = { block: id, sig: sig(html, el), text: String(text) };
+      try {
+        ctx.io.save({ parent: r.version, label: `Proposal on ${id}`, replacements: [{ old_string: LEDGER.exec(html)[0], new_string: ledgerTag(NL) }] });
+        ctx.log(`proposed on ${id}: comment ${cid.slice(0, 8)}. Nothing changes until the person answers yes there; then apply ${cid.slice(0, 8)}`);
+        return 0;
+      } catch (e) { if (!isConflict(e)) throw e; ctx.io.resolve(cid); }
+    }
+    throw new Error("propose: the page kept changing; run blocks and propose again");
+  },
+
+  // A proposal the person said yes to, made: only if their block still reads as it did when you proposed.
+  apply(ctx, args) {
+    const c = findComment(ctx, args[0]);
+    const all = ctx.io.comments(), replies = all.filter((x) => x.reply_to && x.reply_to.id === c.id && !byAgent(x));
+    let done = null;
+    commit(ctx, `the proposal ${c.id.slice(0, 8)}`, null, (html) => {
+      const L = ledgerOf(html), P = L && (L.proposals || {})[c.id];
+      if (!P) throw new Error(`apply: ${c.id.slice(0, 8)} isn't one of your proposals`);
+      if (!replies.length) throw new Error(`apply: the person hasn't answered ${c.id.slice(0, 8)} yet. Wait for their yes`);
+      const p = planBlock(html, P.block, P.text, { sigWas: P.sig });
+      delete p.ledger.proposals[c.id];
+      p.replacements[p.replacements.length - 1] = { old_string: LEDGER.exec(html)[0], new_string: ledgerTag(p.ledger) };
+      done = P;
+      return p;
+    });
+    ctx.io.comment({ reply_to: c.id, body: AGENT + "Changed, as you said yes to." });
+    ctx.io.resolve(c.id);
+    ctx.log(`applied to ${done.block}, replied and resolved. It stays the person's block`);
+    return 0;
   },
 
   blocks(ctx, args) {
@@ -322,11 +462,17 @@ const COMMANDS = {
       const n = ctx.io.pdfPages();
       if (n > L.pages) {
         ctx.io.push({ status: `Shortening: ${n} pages, ${L.pages} asked for` });
-        ctx.log(`not done: it prints on ${n} A4 pages, and the person asked for ${L.pages}. Shorten it: cut what repeats, then each section to what the reader needs, and write those sections again. Then done again`);
+        const per = [];
+        for (let k = 0; k <= L.sections; k++) { const v = sectionView(html, root, L, k); if (v) per.push([k, v.body.reduce((t, c) => t + words(inner(html, c)).split(" ").filter(Boolean).length, 0)]); }
+        const total = per.reduce((t, x) => t + x[1], 0), cut = Math.ceil(total - (total * L.pages) / n * 0.9);
+        ctx.log(`not done: it prints on ${n} A4 pages, and the person asked for ${L.pages}. Cut about ${cut} of its ${total} words: what repeats first, then each section to what the reader needs. Write those sections again, then done again.`);
+        ctx.log(`words by section: ${per.map(([k, w]) => `${k}: ${w}`).join(", ")}`);
         return 1;
       }
       ctx.log(`it prints on ${n} A4 page${n === 1 ? "" : "s"}, as asked`);
     }
+    const open = ctx.io.comments().filter((c) => !c.reply_to && !c.resolved && !(L.proposals || {})[c.id]);
+    if (open.length) ctx.log(`${open.length} open comment${open.length === 1 ? "" : "s"} on the page: run comments, and answer them before you reply`);
     ctx.io.push({ status: "Ready to read" });
     const blanks = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[[^\]]{1,80}\]/g) || []))];
     ctx.log(blanks.length ? `ready. Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}` : "ready.");
@@ -343,7 +489,7 @@ function run(ctx, argv) {
   try { return f(ctx, args); } catch (e) { ctx.log(`docs.js: ${e.message}`); return 1; }
 }
 
-module.exports = { COMMANDS, run, parse, planWrite, buildPage, blocksFromText, ledgerOf, describe, sig, norm, words, esc, PLACEHOLDER };
+module.exports = { COMMANDS, run, parse, planWrite, planBlock, propose, buildPage, blocksFromText, ledgerOf, describe, sig, norm, words, esc, PLACEHOLDER };
 if (require.main !== module) return;
 
 // --- the real space, through the spacesheep CLI ---
@@ -379,6 +525,19 @@ ctx.io = {
   },
   read() { const j = call("get_file", Object.assign(where(), { file: "index.html" })); return { version: j.version.id, files: { "index.html": j.file.content } }; },
   push(body) { return call("push_live", Object.assign(where(), body)); },
+  comments() {
+    const out = [];
+    let after = "";
+    for (let i = 0; i < 20; i++) {
+      const j = call("list_comments", Object.assign(where(), { limit: 200 }, after ? { after } : {}));
+      out.push(...(j.comments || []));
+      after = j.page && j.page.next;
+      if (!after) break;
+    }
+    return out;
+  },
+  comment(body) { return call("create_comment", Object.assign(where(), body)).comment; },
+  resolve(id) { return call("update_comment", Object.assign(where(), { comment: id, resolved: true })); },
   // The saved version as it prints on A4, counted from the PDF's page tree.
   pdfPages() {
     const url = call("export_space", Object.assign(where(), { paper: "a4" })).url;

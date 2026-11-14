@@ -54,7 +54,8 @@ module.exports = function ({ test, ROOT }) {
     s.pages = 3;
     const r = go(s, dir, ["done"]);
     assert.strictEqual(r.code, 1);
-    assert.match(r.out, /prints on 3 A4 pages, and the person asked for 1/);
+    assert.match(r.out, /prints on 3 A4 pages, and the person asked for 1\. Cut about \d+ of its \d+ words/);
+    assert.match(r.out, /words by section: 0: 3, 1: 3, 2: 3/);
     s.pages = 1;
     const ok = go(s, dir, ["done"]);
     assert.strictEqual(ok.code, 0);
