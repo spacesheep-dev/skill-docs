@@ -135,8 +135,17 @@ const render = (b, id, cls) => `<${b.tag} data-ss-id="${id}"${cls ? ` class="${c
 const blockSig = (b) => crypto.createHash("sha256").update(b.tag + ":" + norm(b.html)).digest("hex").slice(0, 16);
 
 // --- the ledger: in the page's head, so one read gives the page and whose each block is ---
-const LEDGER = /<meta name="docs-ledger" content="([^"]*)">/;
-function ledgerOf(html) { const m = LEDGER.exec(html); if (!m) return null; try { return JSON.parse(decode(m[1])); } catch { return null; } }
+// The ledger is the one <meta name="docs-ledger"> the parsed page holds, outside comments and raw text, and its
+// source appears once (so a save can name it exactly). Anything else, a copy in a comment included, is no ledger.
+function ledgerMeta(html) {
+  const metas = [];
+  walk(parse(html), (e) => { if (e.name === "meta" && /\bname\s*=\s*"docs-ledger"/.test(html.slice(e.start, e.openEnd))) metas.push(e); });
+  if (metas.length !== 1) return null;
+  const tag = outer(html, metas[0]);
+  return html.split(tag).length === 2 ? tag : null;
+}
+const LEDGER = { exec: (html) => { const t = ledgerMeta(html); return t ? [t] : null; } };
+function ledgerOf(html) { const t = ledgerMeta(html), m = t && /content="([^"]*)"/.exec(t); if (!m) return null; try { return JSON.parse(decode(m[1])); } catch { return null; } }
 const ledgerTag = (L) => `<meta name="docs-ledger" content="${esc(JSON.stringify(L))}">`;
 
 // Whose each block of a section is, and where the section is.
@@ -252,7 +261,16 @@ const spaceFile = (dir) => path.join(dir, ".docs", "space");
 const spaceOf = (ctx) => { try { return fs.readFileSync(spaceFile(ctx.dir), "utf8").trim(); } catch { return ""; } };
 // A page that isn't a document from this skill: no ledger, and anything at all in its body. A short note, an image,
 // a table, an embed: each is the person's. Only an empty body is blank.
-const foreign = (html) => { if (ledgerOf(html)) return false; const m = /<body[^>]*>([\s\S]*?)(<\/body>|$)/i.exec(html); return !!(m ? m[1] : html).replace(/<!--[\s\S]*?-->/g, "").trim(); };
+// The page's real body, as parsed (a body quoted in a comment, a script or a title isn't one). No body, or two:
+// unsure, so the person's. An empty page is blank.
+function foreign(html) {
+  if (ledgerOf(html) || !html.trim()) return false;
+  const bodies = [];
+  walk(parse(html), (e) => { if (e.name === "body") bodies.push(e); });
+  if (bodies.length !== 1) return true;
+  const b = bodies[0];
+  return b.children.length > 0 || !!html.slice(b.openEnd, b.closeStart).replace(/<!--[\s\S]*?-->/g, "").trim();
+}
 const isConflict = (e) => e && (e.code === "conflict" || /conflict/i.test(String(e.message)));
 
 function describe(html, only) {

@@ -160,4 +160,30 @@ module.exports = function ({ test, ROOT }) {
     const blank = fakeSpace({ "index.html": EMPTY.replace("<body></body>", "<body>\n  \n</body>") }), d2 = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-"));
     assert.strictEqual(go(blank, d2, ["start", blank.id]).code, 0, "only whitespace is blank");
   });
+
+  test("review 3.1: the page's real body decides blank, not a body quoted in a comment or a script", () => {
+    const img = '<body><img src="plan.png" data-ss-id="person-plan"></body></html>';
+    for (const page of [
+      `<html><head><!-- Example: <body></body> --></head>${img}`,
+      `<html><head><script>const t = "<body></body>";</script></head>${img}`,
+      `<html><head><title><body></body></title></head>${img}`,
+      `<html><head></head><body></body><body><img src="x.png"></body></html>`,
+      "<p>no body tag at all</p>",
+    ]) {
+      const s = fakeSpace({ "index.html": page }), dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-"));
+      assert.notStrictEqual(go(s, dir, ["start", s.id]).code, 0, page);
+      assert.notStrictEqual(go(s, dir, ["outline", "T", "H1"]).code, 0, page);
+      assert.strictEqual(s.files["index.html"], page, page);
+    }
+  });
+
+  test("review 3.2: a ledger quoted in a comment doesn't make a person's page the tool's", () => {
+    const L = D.esc(JSON.stringify({ v: 1, sections: 1, next: { "d-s1": 2 }, blocks: {} }));
+    const page = `<html><head><!-- <meta name="docs-ledger" content="${L}"> --></head><body><section data-ss-id="d-s1"><p>Mine.</p></section></body></html>`;
+    const s = fakeSpace({ "index.html": page }), dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-"));
+    assert.strictEqual(D.ledgerOf(page), null);
+    assert.notStrictEqual(go(s, dir, ["start", s.id]).code, 0);
+    assert.notStrictEqual(go(s, dir, ["write", "1", "-"], "Over it.").code, 0);
+    assert.strictEqual(s.files["index.html"], page);
+  });
 };
