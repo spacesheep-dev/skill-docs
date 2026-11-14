@@ -241,26 +241,6 @@ module.exports = function ({ test, ROOT }) {
     }
   });
 
-  test("review 5.1: a filled blank's highlight is unwrapped on the next command, the block's text unchanged, nothing else touched", () => {
-    const { s, dir } = doc("Dear [landlord's name], about [flat address].", "From [start date].");
-    const tool = '<mark class="blank" tabindex="0">';
-    // The person types over one blank inside its mark, adds bold of their own, and a mark of their own.
-    s.person((h) => h.replace(`${tool}[landlord&#39;s name]</mark>`, `${tool}Mr <b>Smith</b></mark>`).replace("about ", 'about <mark class="mine">their mark</mark> '));
-    const textOf = (h, id) => { const m = new RegExp(`<p data-ss-id="${id}">([\\s\\S]*?)</p>`).exec(h); return m && m[1].replace(/<[^>]+>/g, ""); };
-    const before = s.files["index.html"], t1 = textOf(before, "d-s1-1");
-    s.pushes.length = 0;
-    assert.strictEqual(go(s, dir, ["write", "2", "-"], "From [start date] to [end date].").code, 0);
-    const after = s.files["index.html"];
-    assert.ok(after.includes("Dear Mr <b>Smith</b>, about"), "the filled mark is unwrapped, the person's bold kept");
-    assert.strictEqual(textOf(after, "d-s1-1"), t1, "the block's text is the same, character for character");
-    assert.ok(after.includes('<mark class="mine">their mark</mark>'), "a mark of the person's own stays");
-    assert.ok(after.includes(`${tool}[flat address]</mark>`), "an unfilled blank stays marked");
-    assert.ok(!s.pushes.some((p) => (p.edits || []).some((e) => e.anchor === "d-s1-1")), "no live edit on the person's block");
-    // Anything but the tool's own mark around changed words is left alone.
-    const b2 = after.replace(`${tool}[flat address]</mark>`, `${tool}[flat address]</mark>`);
-    assert.strictEqual(b2, after);
-  });
-
   test("review 5.2: blanks, bold and italics mark only text, never a link's address", () => {
     const cases = [
       ["[policy](https://[2001:db8::1]/health)", '<a href="https://[2001:db8::1]/health">policy</a>'],

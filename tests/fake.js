@@ -28,8 +28,8 @@ function fakeSpace(files = { "index.html": "" }) {
           for (const r of body.replacements) {
             const p = r.path || "index.html", cur = next[p] || "";
             const n = cur.split(r.old_string).length - 1;
-            if (r.replace_all ? n < 1 : n !== 1) { const e = new Error(`conflict: ${p}: old text found ${n} times`); e.code = "conflict"; throw e; }
-            next[p] = r.replace_all ? cur.split(r.old_string).join(r.new_string) : cur.replace(r.old_string, () => r.new_string);
+            if (n !== 1) { const e = new Error(`conflict: ${p}: old text found ${n} times`); e.code = "conflict"; throw e; }
+            next[p] = cur.replace(r.old_string, () => r.new_string);
           }
           s.files = next;
         }
