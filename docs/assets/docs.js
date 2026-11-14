@@ -649,8 +649,13 @@ function doneOnce(ctx) {
     }
     ctx.log(`it prints on ${n} A4 page${n === 1 ? "" : "s"}, as asked`);
   }
-  // A blank is one value to fill in. An alternative sentence inside one ("[or: with whoever else]") isn't.
-  const alt = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[\s*or\b[^\]]{0,80}\]/gi) || []))];
+  // The words of the tool's own blocks: each still holds what it wrote (its id once, its sig as the ledger has it).
+  // Only these are checked and named below. Text the person typed is counted, never repeated, never a refusal.
+  const doc = byId(root, "d-doc") || root, counts = idCounts(root), ownText = [];
+  walk(doc, (e) => { if (e.id && L.blocks[e.id] && counts[e.id] === 1 && sig(html, e) === L.blocks[e.id]) ownText.push(words(inner(html, e))); });
+  // A blank is one value to fill in. An alternative sentence inside one ("[or: with whoever else]") isn't. A
+  // person's "[or …]" stays theirs: the agent can't rewrite their block, so it never stops done.
+  const alt = [...new Set(ownText.flatMap((t) => t.match(/\[\s*or\b[^\]]{0,80}\]/gi) || []))];
   if (alt.length) { ctx.log(`not done: ${alt.join(", ")} ${alt.length === 1 ? "is an alternative" : "are alternatives"} inside a blank. A blank is one value to fill in: write it as one, like [alone, or with whom], then done again`); return 1; }
   const open = ctx.io.comments().filter((c) => !c.reply_to && !c.resolved && !(L.proposals || {})[c.id]);
   if (open.length) ctx.log(`${open.length} open comment${open.length === 1 ? "" : "s"} on the page: run comments, and answer them before you reply`);
@@ -663,8 +668,7 @@ function doneOnce(ctx) {
   } else if (cardUp(ctx)) ctx.io.push({ status: "" });
   // Blanks are named only from the tool's own blocks, whose words it wrote: text in square brackets that the
   // person typed is counted, never repeated, for the same reason as their blocks below.
-  const BLANK = /\[[^\]]{1,80}\]/g, doc = byId(root, "d-doc") || root, counts = idCounts(root), own = new Set();
-  walk(doc, (e) => { if (e.id && L.blocks[e.id] && counts[e.id] === 1 && sig(html, e) === L.blocks[e.id]) for (const b of words(inner(html, e)).match(BLANK) || []) own.add(b); });
+  const BLANK = /\[[^\]]{1,80}\]/g, own = new Set(ownText.flatMap((t) => t.match(BLANK) || []));
   const all = [...new Set(words(inner(html, doc)).match(BLANK) || [])], blanks = all.filter((b) => own.has(b)), more = all.length - blanks.length;
   // The reply says where the person wrote on the page from these counts, never from a guess. Their words stay out
   // of this line: it is read as the next step, and anyone who can type on the page would be writing into it.
