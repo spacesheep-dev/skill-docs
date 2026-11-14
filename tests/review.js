@@ -112,4 +112,52 @@ module.exports = function ({ test, ROOT }) {
     s.person((x) => x.replace('<p data-ss-id="d-s1-1" class="todo"></p>', '<p data-ss-id="d-s1-1" class="todo">My own words.</p>'));
     assert.match(go(s, dir, ["blocks", "1"]).out, /d-s1-1\s+person\s+My own words\./);
   });
+
+  test("review 2.1: a yes is a whole reply from a short list; a yes with a condition asks for a new proposal", () => {
+    const { s, dir } = doc("One.");
+    s.person((h) => h.replace("One.", "The price is $100."));
+    go(s, dir, ["propose", "d-s1-1", "-"], "The price is $200.");
+    const p = s.comments[s.comments.length - 1];
+    for (const no of ["Yes, if you leave the price unchanged.", "yes but only the first half", "Yes. And add a line about pets.", "ok, after Friday", "sure thing, but shorter"]) {
+      s.say({ reply_to: p.id, body: no });
+      const r = go(s, dir, ["apply", p.id.slice(0, 8)]);
+      assert.notStrictEqual(r.code, 0, `"${no}" applied`);
+      assert.match(r.out, /new proposal/i, "says to propose again with their condition");
+      assert.ok(body(s).includes("$100"));
+    }
+    for (const yes of ["Yes", "  ok! ", "Go ahead.", "do it", "\ud83d\udc4d", "Yes please"]) assert.ok(D.isYes(yes), yes);
+    s.say({ reply_to: p.id, body: "Yes." });
+    assert.strictEqual(go(s, dir, ["apply", p.id.slice(0, 8)]).code, 0);
+  });
+
+  test("review 2.2: a kept block goes back beside a neighbour that's still on screen", () => {
+    const { s, dir } = doc("Keep.\n\nA.\n\nB.");
+    s.beforeSave = (sp) => { sp.files["index.html"] = sp.files["index.html"].replace("<p data-ss-id=\"d-s1-3\">B.</p>", "<p data-ss-id=\"d-s1-3\">B, typed.</p>"); };
+    s.pushes.length = 0;
+    go(s, dir, ["write", "1", "-"], "Keep.");
+    const edits = s.pushes.flatMap((p) => p.edits || []);
+    const gone = new Set(edits.filter((e) => e.op === "remove").map((e) => e.anchor));
+    const back = edits.filter((e) => /^insert_(after|before)$/.test(e.op) && (e.html || "").includes("B, typed."));
+    assert.strictEqual(back.length, 1);
+    // Replay the screen: an anchor that was removed and not put back can't take an insert.
+    const screen = new Set(["d-s1-1", "d-s1-2", "d-s1-3"]);
+    for (const e of edits) {
+      if (e.op === "remove") screen.delete(e.anchor);
+      else if (/^insert_/.test(e.op)) { assert.ok(screen.has(e.anchor), `insert ${e.op} on ${e.anchor}, which isn't on screen`); for (const m of e.html.matchAll(/data-ss-id="([^"]+)"/g)) screen.add(m[1]); }
+    }
+    assert.ok(screen.has("d-s1-3") && !screen.has("d-s1-2"), "B back, A gone");
+    assert.ok(body(s).includes("B, typed."));
+  });
+
+  test("review 2.3: a page holding anything but nothing (an image, a table) is the person's", () => {
+    for (const thing of ['<img src="cat.png" alt="">', "<table><tr><td></td></tr></table>", '<iframe src="https://example.com"></iframe>', "<p>x</p>"]) {
+      const s = fakeSpace({ "index.html": EMPTY.replace("<body></body>", `<body>${thing}</body>`) });
+      const before = s.files["index.html"], dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-"));
+      assert.notStrictEqual(go(s, dir, ["start", s.id]).code, 0, thing);
+      assert.notStrictEqual(go(s, dir, ["outline", "T", "H1"]).code, 0, thing);
+      assert.strictEqual(s.files["index.html"], before, thing);
+    }
+    const blank = fakeSpace({ "index.html": EMPTY.replace("<body></body>", "<body>\n  \n</body>") }), d2 = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-"));
+    assert.strictEqual(go(blank, d2, ["start", blank.id]).code, 0, "only whitespace is blank");
+  });
 };

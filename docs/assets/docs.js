@@ -250,8 +250,9 @@ function buildPage(starter, title, headings, pages) {
 const plain = (what, v) => { if (typeof v === "string" && v.startsWith("-") && v !== "-") throw new Error(`a ${what} can't start with "-"`); return v; };
 const spaceFile = (dir) => path.join(dir, ".docs", "space");
 const spaceOf = (ctx) => { try { return fs.readFileSync(spaceFile(ctx.dir), "utf8").trim(); } catch { return ""; } };
-// A page someone wrote that isn't a document from this skill: any words at all, and no ledger. A short note is theirs.
-const foreign = (html) => !ledgerOf(html) && words(html.replace(/<(script|style|head|title)[\s\S]*?<\/\1>/gi, "")).length > 0;
+// A page that isn't a document from this skill: no ledger, and anything at all in its body. A short note, an image,
+// a table, an embed: each is the person's. Only an empty body is blank.
+const foreign = (html) => { if (ledgerOf(html)) return false; const m = /<body[^>]*>([\s\S]*?)(<\/body>|$)/i.exec(html); return !!(m ? m[1] : html).replace(/<!--[\s\S]*?-->/g, "").trim(); };
 const isConflict = (e) => e && (e.code === "conflict" || /conflict/i.test(String(e.message)));
 
 function describe(html, only) {
@@ -276,8 +277,11 @@ function textArg(ctx, src, cmd) {
 // Comments the tool writes carry this, so its own are told from the person's (both post as the person's account).
 const AGENT = "Agent: ";
 const byAgent = (c) => String(c.body || "").startsWith(AGENT);
-// A plain yes, and nothing that takes it back: "Yes, go ahead" is one; "yes, but keep my words" and "no" aren't.
-const isYes = (t) => { const w = words(String(t || "")); return /^(yes|yep|yeah|ok|okay|sure|go ahead|do it|please do|approved?|accept(ed)?|agreed|sounds good|👍|✅)(?=\W|$)/i.test(w) && !/\b(no|not|don'?t|do not|keep|rather|but|instead|wait|hold|unless|except)\b/i.test(w); };
+// A yes is a whole reply from this short list, after lower-casing and dropping punctuation. Anything longer or
+// different isn't one, however it starts: "Yes, if you leave the price" is a condition, for a new proposal.
+const YES = new Set(["yes", "y", "yep", "yeah", "yes please", "please do", "yes go ahead", "yes do it", "ok", "okay", "ok go ahead",
+  "sure", "go ahead", "do it", "go for it", "approved", "agreed", "accepted", "accept", "\u{1F44D}", "\u2705", "\u{1F44C}"]);
+const isYes = (t) => YES.has(words(String(t || "")).toLowerCase().replace(/[.,!]+/g, " ").replace(/\s+/g, " ").trim());
 function findComment(ctx, ref) {
   if (!ref) throw new Error("give the comment's id: comments lists them");
   const hits = ctx.io.comments().filter((c) => !c.reply_to && c.id.startsWith(ref));
@@ -344,7 +348,9 @@ function commit(ctx, what, status, plan) {
 function repair(ctx, html, shown, next) {
   const root = parse(html), counts = idCounts(root), fix = [];
   const again = new Set(next.filter((e) => e.op === "replace" || e.op === "remove").map((e) => e.anchor));
-  const unique = (el) => el && el.id && counts[el.id] === 1;
+  // What open tabs lack now: blocks the shown edits removed. One put back below is on screen again.
+  const offScreen = new Set(shown.filter((e) => e.op === "remove").map((e) => e.anchor));
+  const unique = (el) => el && el.id && counts[el.id] === 1 && !offScreen.has(el.id);
   for (const e of shown) {
     if (e.op === "replace") {
       const el = byId(root, e.anchor);
@@ -357,6 +363,8 @@ function repair(ctx, html, shown, next) {
       if (prev) fix.push({ anchor: prev.id, op: "insert_after", html: outer(html, el) });
       else if (nextEl) fix.push({ anchor: nextEl.id, op: "insert_before", html: outer(html, el) });
       else if (unique(el.parent)) fix.push({ anchor: el.parent.id, op: "append_into", html: outer(html, el) });
+      else continue;
+      offScreen.delete(el.id);
     } else if (e.op === "append_into" || e.op === "insert_after") {
       for (const m of e.html.matchAll(/data-ss-id="([^"]+)"/g)) if (!byId(root, m[1])) fix.push({ anchor: m[1], op: "remove" });
     }
@@ -497,7 +505,7 @@ const COMMANDS = {
     if (!P) throw new Error(`apply: ${c.id.slice(0, 8)} isn't one of your proposals`);
     if (!replies.length) throw new Error(`apply: the person hasn't answered ${c.id.slice(0, 8)} yet. Wait for their yes`);
     const last = replies[replies.length - 1];
-    if (!isYes(last.body)) throw new Error(`apply: their last reply, "${words(last.body).slice(0, 80)}", isn't a plain yes. Nothing changed. Answer it with reply, or resolve it if it's a no`);
+    if (!isYes(last.body)) throw new Error(`apply: their last reply, "${words(last.body).slice(0, 80)}", isn't a plain yes, so nothing changed. If it carries a condition, make a new proposal that keeps it, and wait for their yes there; if it's a no, reply and resolve; if it's a question, answer it`);
     // Its changes go together: each block must still read as it did when proposed, checked on one read first.
     commit(ctx, `the proposal ${c.id.slice(0, 8)}`, null, (html) => {
       const root = parse(html);
@@ -569,7 +577,7 @@ function run(ctx, argv) {
   try { return f(ctx, args); } catch (e) { ctx.log(`docs.js: ${e.message}`); return 1; }
 }
 
-module.exports = { COMMANDS, run, parse, planWrite, planBlock, propose, buildPage, blocksFromText, ledgerOf, describe, sig, norm, words, esc, PLACEHOLDER };
+module.exports = { COMMANDS, run, parse, planWrite, planBlock, propose, isYes, buildPage, blocksFromText, ledgerOf, describe, sig, norm, words, esc, PLACEHOLDER };
 if (require.main !== module) return;
 
 // --- the real space, through the spacesheep CLI ---

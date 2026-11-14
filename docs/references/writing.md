@@ -56,9 +56,10 @@ asked. For each, in turn:
   `reply <id> "<what you changed, in a few words>" --resolve`.
 - **On the person's block:** `propose <block> -` with the words you'd put there. That
   pins your wording beside theirs and changes nothing. When their last reply is a plain
-  yes, `apply <id>`: it makes the change only if their block still reads as it did, and
-  resolves the thread. It refuses anything but a plain yes ("yes, but…" is a question:
-  answer it). If they changed the block since, propose again. A no: reply, and resolve.
+  yes ("yes", "ok", "go ahead", 👍: the whole reply), `apply <id>`. It makes the change
+  only if their block still reads as it did, and resolves the thread. Anything else isn't
+  a yes: a condition ("yes, if…") is a new proposal that keeps it; a question gets an
+  answer; a no, a reply and resolve. If they changed the block since, propose again.
 - **A question:** `reply <id> "<the answer>"`, and leave it open for them.
 
 Never change a block a comment isn't about.
