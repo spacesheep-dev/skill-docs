@@ -260,4 +260,16 @@ module.exports = function ({ test, ROOT }) {
     const b2 = after.replace(`${tool}[flat address]</mark>`, `${tool}[flat address]</mark>`);
     assert.strictEqual(b2, after);
   });
+
+  test("review 5.2: blanks, bold and italics mark only text, never a link's address", () => {
+    const cases = [
+      ["[policy](https://[2001:db8::1]/health)", '<a href="https://[2001:db8::1]/health">policy</a>'],
+      ["[docs](https://example.com/a/[id]/b)", '<a href="https://example.com/a/[id]/b">docs</a>'],
+      ["[x](https://example.com/a**b**c)", '<a href="https://example.com/a**b**c">x</a>'],
+      ["[x](https://example.com/*a*)", '<a href="https://example.com/*a*">x</a>'],
+      ["See [the plan](https://example.com) for [date].", 'See <a href="https://example.com">the plan</a> for <mark class="blank" tabindex="0">[date]</mark>.'],
+      ["**[bold blank]** and *it*", '<strong><mark class="blank" tabindex="0">[bold blank]</mark></strong> and <em>it</em>'],
+    ];
+    for (const [t, want] of cases) assert.strictEqual(D.blocksFromText(t)[0].html, want, t);
+  });
 };

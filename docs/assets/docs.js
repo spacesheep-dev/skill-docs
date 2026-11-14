@@ -111,13 +111,14 @@ const sig = (html, el) => crypto.createHash("sha256").update(el.name + ":" + nor
 
 // --- text in, markup out: every character escaped first, then only these few marks become tags ---
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+// A change to the words between tags only: a link's address, or any other attribute, is never touched.
+const onText = (h, fn) => h.split(/(<[^>]*>)/).map((part, i) => (i % 2 ? part : fn(part))).join("");
 function inline(s) {
   let h = esc(s);
   h = h.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g, (m, t, u) => `<a href="${u}">${t}</a>`);
+  h = onText(h, (t) => t.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, "$1<em>$2</em>"));
   // A blank, [what to fill in], is marked so the page can show it and Tab can reach it; print shows plain brackets.
-  h = h.replace(/(^|[^\w>])(\[[^\[\]<>\n]{1,80}\])(?!\()/g, '$1<mark class="blank" tabindex="0">$2</mark>');
-  h = h.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-  h = h.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, "$1<em>$2</em>");
+  h = onText(h, (t) => t.replace(/(^|[^\w])(\[[^\[\]<>\n]{1,80}\])(?!\()/g, '$1<mark class="blank" tabindex="0">$2</mark>'));
   return h;
 }
 // Plain text to blocks: [{tag, html}] where html is the block's inside.
