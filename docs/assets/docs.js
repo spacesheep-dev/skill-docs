@@ -535,6 +535,7 @@ const call = (tool, body) => {
     const msg = String(e.stderr || e.message || "");
     const err = new Error(`${tool}: ${msg.trim().split("\n").slice(-6).join(" ").slice(0, 400)}`);
     if (/"code":\s*"conflict"|\bconflict\b/.test(msg)) err.code = "conflict";
+    err.message += /no tab confirmed/.test(msg) && !/no tab confirmed/.test(err.message) ? " (no tab confirmed)" : "";
     throw err;
   }
 };
@@ -551,7 +552,11 @@ ctx.io = {
     return id;
   },
   read() { const j = call("get_file", Object.assign(where(), { file: "index.html" })); return { version: j.version.id, files: { "index.html": j.file.content } }; },
-  push(body) { return call("push_live", Object.assign(where(), body)); },
+  // A push no open tab confirmed in time was still sent; the save that follows is what lasts, so it goes on.
+  push(body) {
+    try { return call("push_live", Object.assign(where(), body)); }
+    catch (e) { if (/no tab confirmed|"code":\s*"unavailable"/.test(e.message)) { console.log("an open tab didn't confirm the push in time; saving it anyway"); return { unconfirmed: true }; } throw e; }
+  },
   comments() {
     const out = [];
     let after = "";
