@@ -66,7 +66,7 @@ Never change a block a comment isn't about.
 
 - Never invent a fact the person didn't give: a name, a date, an amount, an address, a
   clause. Write it in square brackets, `[landlord's name]`, for them to fill in.
-- Write to the length they asked for. A printed A4 page holds about 350 words with its
+- Write to the length they asked for. A printed A4 page holds about 400 words with its
   title and headings. With no length named, keep each section to what a reader needs.
 - Say each thing once, in the reader's words. No filler openings, no summary that
   repeats the sections.

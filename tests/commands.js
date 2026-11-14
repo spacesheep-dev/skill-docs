@@ -77,4 +77,15 @@ module.exports = function ({ test, ROOT }) {
     assert.deepStrictEqual(b.map((x) => x.tag), ["p", "ul", "ol", "h3", "blockquote"]);
     assert.strictEqual(b[0].html, '<strong>bold</strong> and <em>it</em> and <a href="https://example.com/?a=1&amp;b=2">a link</a>');
   });
+
+  test("done says a far-over length at once, without printing", () => {
+    const { s, dir } = fresh(1);
+    const long = Array(80).fill("This sentence has exactly eight words in it.").join(" ");
+    for (const n of [0, 1, 2]) go(s, dir, ["write", String(n), "-"], long);
+    let printed = 0; s.io.pdfPages = () => { printed++; return 1; };
+    const r = go(s, dir, ["done"]);
+    assert.strictEqual(r.code, 1);
+    assert.strictEqual(printed, 0, "no PDF for a document three times too long");
+    assert.match(r.out, /the person asked for 1/);
+  });
 };

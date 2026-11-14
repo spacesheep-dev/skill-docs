@@ -32,6 +32,7 @@ const WRITING = path.join(__dirname, "..", "references", "writing.md");
 const OUTLINE = path.join(__dirname, "..", "references", "outline.md");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PLACEHOLDER = "Writing…";
+const WORDS_FAR = 600; // words no A4 page of the starter holds
 
 // --- reading a page: elements, their ids, their spans (pure) ---
 const VOID = new Set("area base br col embed hr img input link meta param source track wbr".split(" "));
@@ -471,8 +472,11 @@ const COMMANDS = {
     if (left.length) { ctx.log(`not done: section${left.length > 1 ? "s" : ""} ${left.join(", ")} still say "${PLACEHOLDER}". Write ${left.length > 1 ? "them" : "it"}, then done again`); return 1; }
     // The length the person asked for, as the page prints: over it is not done.
     if (L.pages) {
+      // Far over (more words than any page of this starter prints, measured at 520 a page) is said at once;
+      // anything nearer is printed and counted.
+      const total = L.sections >= 0 ? [...Array(L.sections + 1).keys()].reduce((t, k) => { const v = sectionView(html, root, L, k); return t + (v ? v.body.reduce((a, c) => a + words(inner(html, c)).split(" ").filter(Boolean).length, 0) : 0); }, 0) : 0;
       ctx.io.push({ status: "Checking the printed length" });
-      const n = ctx.io.pdfPages();
+      const n = total > L.pages * WORDS_FAR ? Math.ceil(total / 450) : ctx.io.pdfPages();
       if (n > L.pages) {
         ctx.io.push({ status: `Shortening: ${n} pages, ${L.pages} asked for` });
         const per = [];
