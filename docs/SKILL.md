@@ -1,59 +1,25 @@
 ---
 name: docs
-description: Use when someone wants a document written on a page they and others will read, comment on and edit together, such as a proposal, a letter, a brief, a plan, a policy or a report. It writes the document live on a space, section by section, so the person watches it fill in, and keeps every word they typed.
+description: Use when someone wants a document written on a page they and others will read, comment on and edit together, such as a proposal, a letter, a brief, a plan, a policy or a report. It writes the document live on a space, section by section, so the person watches it fill in, and it never changes words they typed without their yes.
 license: MIT
 ---
 
 # Docs
 
-The person watches the page while you write. They see a status within 10 seconds, the
-title and every heading within 60, and then one section at a time, each pushed as soon
-as it is written. Never plan the whole document before the first push.
+**First, before you read on:** run `node <this skill's folder>/assets/docs.js -C <folder>
+start <link> "<title>" "<heading>" "<heading>" …`, with the space the person gave you
+(`start --new "<title>" "<heading>" …` with none), where `<folder>` is an empty folder you
+work in. The title is the document's name in the person's words. The headings are its
+sections, three to seven, short and plain, in the order a reader needs them. Add
+`--pages <n>` when the ask names a length ("a one-page proposal": `--pages 1`). Name them
+from the ask in a few seconds; nothing else is decided yet.
 
-Work in an empty folder: the page is `<folder>/page/index.html`, one file. Every
-command below takes `--space-id <id>`, the space the person gave you.
+`start` puts a status, the title and every heading on the page at once, each section
+saying "Writing…", saves it, and prints the rest of this skill. Read that, then write.
 
-## 1. A status, at once
+**The person watches the page fill in.** A status within 10 seconds, the headings within
+30, a new section at least every 45 seconds. Plan one section, write it, then plan the
+next: never plan the whole document before the first section goes in.
 
-`spacesheep live push --space-id <id> --status "Planning the document"`
-
-## 2. The outline, within 60 seconds
-
-Decide only the title, a one-line lede and the section headings, in the person's words.
-Write `index.html`: a plain page, one readable column, a short stylesheet in `<head>`
-that works in light and dark, and no script. Each section is
-
-    <section data-ss-id="s1"><h2 data-ss-id="s1-h">Heading</h2>
-    <p data-ss-id="s1-p1" class="todo">Writing…</p></section>
-
-numbered s1, s2, … in order. Then show it, and save it so a later visitor sees it:
-
-    spacesheep live push --space-id <id> --html "$(cat page/index.html)"
-    spacesheep deploy page --space <id> -m "Outline"
-
-## 3. One section at a time
-
-Write the section, replace it in `index.html`, then push only that section, with a
-status naming the next one:
-
-    spacesheep live push --space-id <id> --status "Writing <next heading>" \
-      --edits '[{"anchor":"s2","op":"replace","html":"<section data-ss-id=\"s2\">…</section>"}]'
-
-Each paragraph, list item and heading gets its own `data-ss-id` (`s2-p1`, `s2-p2`, …),
-kept for the life of the document. After every two sections, save:
-`spacesheep deploy page --space <id> -m "<what's in>"`.
-
-## Rules
-
-- Text is text. Write `&`, `<` and `>` in the person's words as `&amp;`, `&lt;`, `&gt;`.
-  Only `h1`–`h3`, `p`, `ul`, `ol`, `li`, `strong`, `em`, `a`, `blockquote` and `table`
-  inside a section: plain markup is what people can type into together.
-- Never change words the person typed on the page. `deploy` merges what people typed
-  since your last save; never pass `--replace`.
-- A placeholder is the only thing you write that the person didn't ask for. Don't invent
-  facts: where you need one (a name, a date, an amount), write it in brackets.
-
-## When it's done
-
-Save with `-m "Done"`, then reply to the person in two or three lines: what the
-document holds, and what they should check.
+You write text, never the page: `docs.js` turns it into the page, shows it on every open
+tab and saves it. Never deploy, push or edit the page any other way.

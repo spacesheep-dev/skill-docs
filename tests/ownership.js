@@ -53,6 +53,8 @@ module.exports = function ({ test, ROOT }) {
     const mine = [typed, added, loose, split, theirs];
     const where = mine.map((b) => sectionOf(page(s), b));
     const order = () => mine.map((b) => page(s).indexOf(b));
+    const rank = (o) => o.map((x) => o.filter((y) => y < x).length);
+    const rank0 = rank(order());
     const personIds = ["d-s1-1", "p-1", "d-s3-1"];
     const check = (what) => {
       const h = page(s);
@@ -61,8 +63,7 @@ module.exports = function ({ test, ROOT }) {
       assert.strictEqual(count(h, loose), 1, `${what}: the block with no id`);
       assert.strictEqual(count(h, split), 2, `${what}: both halves of the split block`);
       assert.strictEqual(count(h, theirs), 1, `${what}: their own section`);
-      const o = order();
-      assert.deepStrictEqual(o.slice().sort((a, b) => a - b), o, `${what}: the person's blocks keep their order`);
+      assert.deepStrictEqual(rank(order()), rank0, `${what}: the person's blocks keep their order`);
       assert.deepStrictEqual(mine.map((b) => sectionOf(h, b)), where, `${what}: each stays in its section`);
       for (const p of s.pushes) for (const e of p.edits || []) {
         if (e.op === "append_into") assert.match(e.anchor, /^d-s\d+$/, `${what}: appends only into a section`);
