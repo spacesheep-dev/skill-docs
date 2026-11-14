@@ -258,10 +258,12 @@ function findComment(ctx, ref) {
   return hits[0];
 }
 // The one place a change to the person's words is asked for, shaped as the platform's suggestions will take it
-// (create_suggestion { space, changes: [{block, before, after}], reason }): refused as a conflict when a block no
-// longer reads `before`. Today each change is a comment pinned to its block, quoting it; when pages have
-// suggestions, only this function changes. Answers the ids it made, one per change.
+// (create_suggestion { space, changes: [{block, before, after}] (1 to 20), reason }: one suggestion, its changes
+// accepted together), refused as a conflict when a block no longer reads `before`. Today it is one comment pinned
+// to the first change's block, quoting it; when pages have suggestions, only this function changes. Answers the
+// one id it made.
 function propose(ctx, html, { changes, reason }) {
+  if (!Array.isArray(changes) || changes.length < 1 || changes.length > 20) throw new Error("propose: 1 to 20 changes");
   const root = parse(html);
   for (const c of changes) {
     const el = byId(root, c.block);
@@ -271,11 +273,13 @@ function propose(ctx, html, { changes, reason }) {
       throw e;
     }
   }
-  return changes.map((c) => {
-    const body = `${AGENT}I'd change this to:\n\n${String(c.after).trim().split("\n").map((l) => "> " + l).join("\n")}\n\n${reason ? reason.trim() + "\n\n" : ""}Reply yes to make the change, or say what you'd rather.`;
-    return ctx.io.comment({ block: c.block, quote: String(c.before).slice(0, 2000), body }).id;
-  });
+  const quoteAfter = (t) => String(t).trim().split("\n").map((l) => "> " + l).join("\n");
+  const what = changes.length === 1 ? `I'd change this to:\n\n${quoteAfter(changes[0].after)}`
+    : `I'd change these together:\n\n${changes.map((c) => `In ${c.block}, "${words(esc(c.before)).slice(0, 80)}" to:\n\n${quoteAfter(c.after)}`).join("\n\n")}`;
+  const body = `${AGENT}${what}\n\n${reason ? reason.trim() + "\n\n" : ""}Reply yes to make ${changes.length === 1 ? "the change" : "them all"}, or say what you'd rather.`;
+  return ctx.io.comment({ block: changes[0].block, quote: String(changes[0].before).slice(0, 2000), body }).id;
 }
+
 // Read, plan, show, save: the one path every change takes. A clash (someone changed the page since the read)
 // puts the saved words back on screen where this showed others, and plans again from a new read.
 function commit(ctx, what, status, plan) {
@@ -421,10 +425,10 @@ const COMMANDS = {
       if (!el) throw new Error(`propose: no block ${id}, or it appears twice: run blocks`);
       if (L.blocks[id] && sig(html, el) === L.blocks[id] && idCounts(root)[id] === 1) throw new Error(`propose: ${id} is yours, not the person's: change it with edit`);
       if (!blocksFromText(text).length) throw new Error("propose: give the words you'd put in its place");
-      const [cid] = propose(ctx, html, { changes: [{ block: id, before: words(inner(html, el)), after: text }], reason: reason || "" });
+      const cid = propose(ctx, html, { changes: [{ block: id, before: words(inner(html, el)), after: text }], reason: reason || "" });
       const NL = JSON.parse(JSON.stringify(L));
       NL.proposals = NL.proposals || {};
-      NL.proposals[cid] = { block: id, sig: sig(html, el), text: String(text) };
+      NL.proposals[cid] = { changes: [{ block: id, sig: sig(html, el), text: String(text) }] };
       try {
         ctx.io.save({ parent: r.version, label: `Proposal on ${id}`, replacements: [{ old_string: LEDGER.exec(html)[0], new_string: ledgerTag(NL) }] });
         ctx.log(`proposed on ${id}: comment ${cid.slice(0, 8)}. Nothing changes until the person answers yes there; then apply ${cid.slice(0, 8)}`);
@@ -437,21 +441,24 @@ const COMMANDS = {
   // A proposal the person said yes to, made: only if their block still reads as it did when you proposed.
   apply(ctx, args) {
     const c = findComment(ctx, args[0]);
-    const all = ctx.io.comments(), replies = all.filter((x) => x.reply_to && x.reply_to.id === c.id && !byAgent(x));
-    let done = null;
+    const replies = ctx.io.comments().filter((x) => x.reply_to && x.reply_to.id === c.id && !byAgent(x));
+    const first = ledgerOf(ctx.io.read().files["index.html"] || ""), P = first && (first.proposals || {})[c.id];
+    if (!P) throw new Error(`apply: ${c.id.slice(0, 8)} isn't one of your proposals`);
+    if (!replies.length) throw new Error(`apply: the person hasn't answered ${c.id.slice(0, 8)} yet. Wait for their yes`);
+    // Its changes go together: each block must still read as it did when proposed, checked on one read first.
     commit(ctx, `the proposal ${c.id.slice(0, 8)}`, null, (html) => {
-      const L = ledgerOf(html), P = L && (L.proposals || {})[c.id];
-      if (!P) throw new Error(`apply: ${c.id.slice(0, 8)} isn't one of your proposals`);
-      if (!replies.length) throw new Error(`apply: the person hasn't answered ${c.id.slice(0, 8)} yet. Wait for their yes`);
-      const p = planBlock(html, P.block, P.text, { sigWas: P.sig });
-      delete p.ledger.proposals[c.id];
-      p.replacements[p.replacements.length - 1] = { old_string: LEDGER.exec(html)[0], new_string: ledgerTag(p.ledger) };
-      done = P;
-      return p;
+      const root = parse(html);
+      for (const ch of P.changes) { const el = byId(root, ch.block); if (!el || sig(html, el) !== ch.sig) throw new Error(`${ch.block} changed since you proposed: read it with blocks, and propose again`); }
+      return { edits: [], replacements: [], kept: [] };
     });
+    P.changes.forEach((ch, i) => commit(ctx, `${ch.block}, as proposed`, null, (html) => {
+      const p = planBlock(html, ch.block, ch.text, { sigWas: ch.sig });
+      if (i === P.changes.length - 1) { delete p.ledger.proposals[c.id]; p.replacements[p.replacements.length - 1] = { old_string: LEDGER.exec(html)[0], new_string: ledgerTag(p.ledger) }; }
+      return p;
+    }));
     ctx.io.comment({ reply_to: c.id, body: AGENT + "Changed, as you said yes to." });
     ctx.io.resolve(c.id);
-    ctx.log(`applied to ${done.block}, replied and resolved. It stays the person's block`);
+    ctx.log(`applied to ${P.changes.map((ch) => ch.block).join(", ")}, replied and resolved. ${P.changes.length === 1 ? "It stays" : "They stay"} the person's`);
     return 0;
   },
 
@@ -488,6 +495,9 @@ const COMMANDS = {
       }
       ctx.log(`it prints on ${n} A4 page${n === 1 ? "" : "s"}, as asked`);
     }
+    // A blank is one value to fill in. An alternative sentence inside one ("[or: with whoever else]") isn't.
+    const alt = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[\s*or\b[^\]]{0,80}\]/gi) || []))];
+    if (alt.length) { ctx.log(`not done: ${alt.join(", ")} ${alt.length === 1 ? "is an alternative" : "are alternatives"} inside a blank. A blank is one value to fill in: write it as one, like [alone, or with whom], then done again`); return 1; }
     const open = ctx.io.comments().filter((c) => !c.reply_to && !c.resolved && !(L.proposals || {})[c.id]);
     if (open.length) ctx.log(`${open.length} open comment${open.length === 1 ? "" : "s"} on the page: run comments, and answer them before you reply`);
     ctx.io.push({ status: "Ready to read" });

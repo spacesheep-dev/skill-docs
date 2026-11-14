@@ -88,4 +88,16 @@ module.exports = function ({ test, ROOT }) {
     assert.strictEqual(printed, 0, "no PDF for a document three times too long");
     assert.match(r.out, /the person asked for 1/);
   });
+
+  test("done refuses a blank that holds an alternative sentence", () => {
+    const { s, dir } = fresh();
+    go(s, dir, ["write", "0", "-"], "They would live there alone [or: with whoever else will live there].");
+    go(s, dir, ["write", "1", "-"], "One.");
+    go(s, dir, ["write", "2", "-"], "Two.");
+    const r = go(s, dir, ["done"]);
+    assert.strictEqual(r.code, 1);
+    assert.match(r.out, /\[or: with whoever else will live there\] is an alternative inside a blank/);
+    go(s, dir, ["write", "0", "-"], "They would live there [alone, or with whom].");
+    assert.strictEqual(go(s, dir, ["done"]).code, 0);
+  });
 };

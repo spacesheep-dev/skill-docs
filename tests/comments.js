@@ -87,14 +87,18 @@ module.exports = function ({ test, ROOT }) {
     assert.match(go(s, dir, ["edit", "d-s1-2", "-"], "x").out, /is the person's: propose/);
   });
 
-  test("propose takes changes [{block, before, after}] and a reason, and refuses as a conflict when before isn't what the block reads", () => {
+  test("propose takes changes [{block, before, after}] and a reason, makes one id a call, and refuses as a conflict when before isn't what the block reads", () => {
     const { s } = doc();
     const html = s.files["index.html"], n = s.comments.length;
     assert.throws(() => D.propose({ io: s.io }, html, { changes: [{ block: "d-s1-1", before: "Not what it says.", after: "x" }], reason: "r" }), (e) => e.code === "conflict");
     assert.strictEqual(s.comments.length, n, "nothing posted on a conflict");
-    const ids = D.propose({ io: s.io }, html, { changes: [{ block: "d-s1-1", before: "Section 1, first.", after: "Tighter." }], reason: "Shorter, as asked." });
-    assert.strictEqual(ids.length, 1);
-    const c = s.comments[s.comments.length - 1];
+    const id = D.propose({ io: s.io }, html, { changes: [{ block: "d-s1-1", before: "Section 1, first.", after: "Tighter." }], reason: "Shorter, as asked." });
+    assert.strictEqual(typeof id, "string", "one id per call");
+    const two = D.propose({ io: s.io }, html, { changes: [{ block: "d-s1-1", before: "Section 1, first.", after: "A" }, { block: "d-s2-1", before: "Section 2, first.", after: "B" }] });
+    assert.strictEqual(typeof two, "string", "one id for two changes");
+    assert.strictEqual(s.comments.length, n + 2, "one comment each call");
+    assert.throws(() => D.propose({ io: s.io }, html, { changes: [] }));
+    const c = s.comments[s.comments.length - 2];
     assert.deepStrictEqual([c.block, c.quote], ["d-s1-1", "Section 1, first."]);
     assert.match(c.body, /> Tighter\.[\s\S]*Shorter, as asked\./);
   });

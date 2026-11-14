@@ -13,8 +13,8 @@ you work in. It puts a status on the page at once and says what the space holds.
 it's empty, it prints how to write the outline, the next command. When it holds a
 document already, it lists its blocks and prints the rest of this skill.
 
-**The person watches the page fill in.** A status within 10 seconds, the headings within
-30, a new section at least every 45 seconds. Plan one section, write it, then plan the
+**The person watches the page fill in.** The status is your first command, ahead of all
+thinking; the headings follow within 30 seconds, and a new section at least every 45. Plan one section, write it, then plan the
 next: never plan the whole document before its first section goes in.
 
 You write text, never the page: `docs.js` turns it into the page, shows it on every open
