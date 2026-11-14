@@ -55,9 +55,10 @@ asked. For each, in turn:
   the block's new text (a heredoc, as for `write`), or `write <n>` for a section. Then
   `reply <id> "<what you changed, in a few words>" --resolve`.
 - **On the person's block:** `propose <block> -` with the words you'd put there. That
-  pins your wording beside theirs and changes nothing. When their reply says yes,
-  `apply <id>`: it makes the change only if their block still reads as it did, and
-  resolves the thread. If they changed it since, propose again. A no: reply, and resolve.
+  pins your wording beside theirs and changes nothing. When their last reply is a plain
+  yes, `apply <id>`: it makes the change only if their block still reads as it did, and
+  resolves the thread. It refuses anything but a plain yes ("yes, but…" is a question:
+  answer it). If they changed the block since, propose again. A no: reply, and resolve.
 - **A question:** `reply <id> "<the answer>"`, and leave it open for them.
 
 Never change a block a comment isn't about.

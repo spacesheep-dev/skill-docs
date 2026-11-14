@@ -21,7 +21,7 @@ module.exports = function ({ test, ROOT }) {
 
   test("start shows a status first; outline then draws the title and headings, and saves them", () => {
     const { s } = fresh();
-    assert.deepStrictEqual(s.pushes.map((p) => Object.keys(p).join()), ["status", "html"]);
+    assert.deepStrictEqual(s.pushes.map((p) => Object.keys(p).join()), ["status", "html", "status"], "the status goes back up after the outline's save");
     assert.strictEqual(s.saves.length, 1);
     const h = s.files["index.html"];
     for (const id of ["d-title", "d-s0-1", "d-s1-h", "d-s1-1", "d-s2-h", "d-s2-1"]) assert.ok(h.includes(`data-ss-id="${id}"`), id);
@@ -32,8 +32,9 @@ module.exports = function ({ test, ROOT }) {
     const { s, dir } = fresh();
     s.pushes.length = 0;
     go(s, dir, ["write", "1", "-", "Writing Two"], "First.\n\nSecond.");
-    assert.strictEqual(s.pushes.length, 1);
+    assert.strictEqual(s.pushes.length, 2, "the section, then its status again after the save");
     assert.strictEqual(s.pushes[0].status, "Writing Two");
+    assert.deepStrictEqual(s.pushes[1], { status: "Writing Two" });
     assert.deepStrictEqual(s.pushes[0].edits.map((e) => e.op), ["replace", "append_into"]);
     const last = s.saves[s.saves.length - 1];
     assert.ok(!last.files && last.replacements.length === 2, "the section and the ledger");

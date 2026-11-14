@@ -36,10 +36,12 @@ const WORDS_FAR = 600; // words no A4 page of the starter holds
 
 // --- reading a page: elements, their ids, their spans (pure) ---
 const VOID = new Set("area base br col embed hr img input link meta param source track wbr".split(" "));
+// Elements whose insides are text, never elements: a section pasted into a textarea is words in a box.
+const RAW = new Set("script style textarea title xmp iframe noembed noframes noscript plaintext".split(" "));
 const TAG = /<!--[\s\S]*?(?:-->|$)|<(\/?)([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
 const attr = (attrs, name) => { const m = new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, "i").exec(attrs || ""); return m ? (m[2] !== undefined ? m[2] : m[3]) : null; };
 // A tree of elements: {name, id, start, openEnd, closeStart, end, children}. Lenient: an unclosed element ends
-// where its parent does; script and style bodies are skipped whole.
+// where its parent does; the insides of RAW elements are skipped whole.
 function parse(html) {
   const root = { name: "#root", start: 0, openEnd: 0, closeStart: html.length, end: html.length, children: [] };
   const stack = [root];
@@ -52,7 +54,7 @@ function parse(html) {
       const el = { name, id: attr(m[3], "data-ss-id"), cls: attr(m[3], "class"), start: m.index, openEnd: m.index + m[0].length, closeStart: null, end: null, children: [], parent: stack[stack.length - 1] };
       el.parent.children.push(el);
       if (VOID.has(name) || /\/\s*$/.test(m[3])) { el.closeStart = el.end = el.openEnd; continue; }
-      if (name === "script" || name === "style") {
+      if (RAW.has(name)) {
         const endTag = new RegExp(`</${name}\\s*>`, "ig"); endTag.lastIndex = el.openEnd;
         const e = endTag.exec(html);
         el.closeStart = e ? e.index : html.length; el.end = e ? e.index + e[0].length : html.length;
@@ -80,8 +82,29 @@ const inner = (html, el) => html.slice(el.openEnd, el.closeStart);
 // --- words: what a block reads, and its hash ---
 const ENT = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
 const decode = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => e[0] === "#" ? String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : +e.slice(1)) : (ENT[e.toLowerCase()] !== undefined ? ENT[e.toLowerCase()] : m));
-// A block's words and inline tags, without attributes or spacing: what a person changes when they type.
-const norm = (s) => decode(s.replace(/<(\/?)([a-zA-Z][\w-]*)[^>]*>/g, (m, c, n) => `<${c}${n.toLowerCase()}>`)).replace(/\s+/g, " ").trim();
+// What a block holds, in one canonical form: its words (entities decoded, then escaped again, so markup typed as
+// text stays text), and each inline tag with every attribute but data-ss-id, sorted. Spacing is collapsed. A link
+// whose address changed, or words typed as "<strong>", read differently from what the tool wrote.
+const escText = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function canonTag(close, name, attrs) {
+  if (close) return `</${name.toLowerCase()}>`;
+  const list = [];
+  for (const m of String(attrs || "").matchAll(/([^\s=\/"']+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s>"']+))?/g)) {
+    const k = m[1].toLowerCase();
+    if (k === "data-ss-id") continue;
+    const v = m[2] === undefined ? "" : decode(m[2].replace(/^["']|["']$/g, ""));
+    list.push(`${k}="${escText(v).replace(/"/g, "&quot;")}"`);
+  }
+  return `<${name.toLowerCase()}${list.sort().map((a) => " " + a).join("")}>`;
+}
+function norm(s) {
+  let out = "", last = 0;
+  for (const m of String(s).matchAll(/<(\/?)([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g)) {
+    out += escText(decode(s.slice(last, m.index))) + canonTag(m[1], m[2], m[3]);
+    last = m.index + m[0].length;
+  }
+  return (out + escText(decode(s.slice(last)))).replace(/\s+/g, " ").trim();
+}
 const words = (s) => decode(s.replace(/<br\s*\/?>|<\/(?:li|p|h\d|blockquote)>/gi, " ").replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
 const sig = (html, el) => crypto.createHash("sha256").update(el.name + ":" + norm(inner(html, el))).digest("hex").slice(0, 16);
 
@@ -225,8 +248,8 @@ function buildPage(starter, title, headings, pages) {
 const plain = (what, v) => { if (typeof v === "string" && v.startsWith("-") && v !== "-") throw new Error(`a ${what} can't start with "-"`); return v; };
 const spaceFile = (dir) => path.join(dir, ".docs", "space");
 const spaceOf = (ctx) => { try { return fs.readFileSync(spaceFile(ctx.dir), "utf8").trim(); } catch { return ""; } };
-// A page someone wrote that isn't a document from this skill: more than a few words, and no ledger.
-const foreign = (html) => !ledgerOf(html) && words(html.replace(/<(script|style|head)[\s\S]*?<\/\1>/gi, "")).length > 200;
+// A page someone wrote that isn't a document from this skill: any words at all, and no ledger. A short note is theirs.
+const foreign = (html) => !ledgerOf(html) && words(html.replace(/<(script|style|head|title)[\s\S]*?<\/\1>/gi, "")).length > 0;
 const isConflict = (e) => e && (e.code === "conflict" || /conflict/i.test(String(e.message)));
 
 function describe(html, only) {
@@ -251,6 +274,8 @@ function textArg(ctx, src, cmd) {
 // Comments the tool writes carry this, so its own are told from the person's (both post as the person's account).
 const AGENT = "Agent: ";
 const byAgent = (c) => String(c.body || "").startsWith(AGENT);
+// A plain yes, and nothing that takes it back: "Yes, go ahead" is one; "yes, but keep my words" and "no" aren't.
+const isYes = (t) => { const w = words(String(t || "")); return /^(yes|yep|yeah|ok|okay|sure|go ahead|do it|please do|approved?|accept(ed)?|agreed|sounds good|👍|✅)(?=\W|$)/i.test(w) && !/\b(no|not|don'?t|do not|keep|rather|but|instead|wait|hold|unless|except)\b/i.test(w); };
 function findComment(ctx, ref) {
   if (!ref) throw new Error("give the comment's id: comments lists them");
   const hits = ctx.io.comments().filter((c) => !c.reply_to && c.id.startsWith(ref));
@@ -286,32 +311,55 @@ function commit(ctx, what, status, plan) {
   let shown = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const r = ctx.io.read(), html = r.files["index.html"] || "";
-    if (shown) {
-      const root = parse(html), fix = [];
-      for (const e of shown) {
-        if (e.op === "replace") { const el = byId(root, e.anchor); if (el && outer(html, el) !== e.html) fix.push({ anchor: e.anchor, op: "replace", html: outer(html, el) }); }
-        else if (e.op === "append_into" || e.op === "insert_after") for (const m of e.html.matchAll(/data-ss-id="([^"]+)"/g)) if (!byId(root, m[1])) fix.push({ anchor: m[1], op: "remove" });
-      }
-      if (fix.length) { ctx.io.push({ edits: fix }); ctx.log(`someone changed the page while you wrote: open tabs show the saved words again (${fix.length} block${fix.length === 1 ? "" : "s"})`); }
-    }
-    const p = plan(html);
+    let p = null, failed = null;
+    try { p = plan(html); } catch (e) { failed = e; }
+    if (shown) repair(ctx, html, shown, p ? p.edits : []);
+    if (failed) throw failed;
     if (p.kept && p.kept.length) ctx.log(`the person changed ${p.kept.join(", ")}: theirs now, left as they wrote it. Your words went around them; to change theirs, propose`);
     if (!p.edits.length && !(p.kept && p.kept.length)) { if (status) ctx.io.push({ status }); ctx.log(`${what}: nothing changed`); return; }
     if (p.edits.length) {
       const a = ctx.io.push(Object.assign({ edits: p.edits }, status ? { status: status.slice(0, 200) } : {}));
       shown = p.edits;
       if (a && a.tabs_open !== undefined) ctx.log(`shown on ${a.tabs_open} open tab${a.tabs_open === 1 ? "" : "s"}`);
-    } else if (status) ctx.io.push({ status });
+    }
     try {
       ctx.io.save({ parent: r.version, label: what[0].toUpperCase() + what.slice(1), replacements: p.replacements, live_patch: p.edits });
-      ctx.log(`${what}: ${p.edits.length} change${p.edits.length === 1 ? "" : "s"}, saved`);
-      return;
     } catch (e) {
       if (!isConflict(e)) throw e;
       ctx.log(`${what}: the page changed while you wrote; reading it again`);
+      continue;
     }
+    // A save takes the work card down; the work goes on, so the status goes back up.
+    if (status) ctx.io.push({ status: status.slice(0, 200) });
+    ctx.log(`${what}: ${p.edits.length} change${p.edits.length === 1 ? "" : "s"}, saved`);
+    return;
   }
   throw new Error(`${what} kept changing under you; run blocks and try again`);
+}
+// After a clash, open tabs show what was pushed but not saved. Put the saved page back there, block by block,
+// except where the new plan changes that block again anyway: words put back, blocks removed on screen but kept
+// in the save put back in their place, blocks added on screen but not saved taken off.
+function repair(ctx, html, shown, next) {
+  const root = parse(html), counts = idCounts(root), fix = [];
+  const again = new Set(next.filter((e) => e.op === "replace" || e.op === "remove").map((e) => e.anchor));
+  const unique = (el) => el && el.id && counts[el.id] === 1;
+  for (const e of shown) {
+    if (e.op === "replace") {
+      const el = byId(root, e.anchor);
+      if (el && outer(html, el) !== e.html && !again.has(e.anchor)) fix.push({ anchor: e.anchor, op: "replace", html: outer(html, el) });
+    } else if (e.op === "remove") {
+      const el = byId(root, e.anchor);
+      if (!el || again.has(e.anchor)) continue;
+      const sib = el.parent.children, i = sib.indexOf(el);
+      const prev = sib.slice(0, i).reverse().find(unique), nextEl = sib.slice(i + 1).find(unique);
+      if (prev) fix.push({ anchor: prev.id, op: "insert_after", html: outer(html, el) });
+      else if (nextEl) fix.push({ anchor: nextEl.id, op: "insert_before", html: outer(html, el) });
+      else if (unique(el.parent)) fix.push({ anchor: el.parent.id, op: "append_into", html: outer(html, el) });
+    } else if (e.op === "append_into" || e.op === "insert_after") {
+      for (const m of e.html.matchAll(/data-ss-id="([^"]+)"/g)) if (!byId(root, m[1])) fix.push({ anchor: m[1], op: "remove" });
+    }
+  }
+  if (fix.length) { ctx.io.push({ edits: fix }); ctx.log(`someone changed the page while you wrote: open tabs show the saved words again (${fix.length} block${fix.length === 1 ? "" : "s"})`); }
 }
 
 const COMMANDS = {
@@ -362,6 +410,7 @@ const COMMANDS = {
     const page = buildPage(fs.readFileSync(STARTER, "utf8"), title, headings, pages);
     const a = ctx.io.push({ html: page });
     ctx.io.save({ parent: r.version, label: "Outline", files: [{ path: "index.html", content: page }] });
+    ctx.io.push({ status: "Writing the opening" }); // a save takes the work card down: the work isn't done
     ctx.log(`the title and ${headings.length} headings are on the page${a && a.tabs_open !== undefined ? ` (${a.tabs_open} tab${a.tabs_open === 1 ? "" : "s"} open)` : ""}, and saved`);
     ctx.log("\n" + fs.readFileSync(WRITING, "utf8"));
     return 0;
@@ -445,6 +494,8 @@ const COMMANDS = {
     const first = ledgerOf(ctx.io.read().files["index.html"] || ""), P = first && (first.proposals || {})[c.id];
     if (!P) throw new Error(`apply: ${c.id.slice(0, 8)} isn't one of your proposals`);
     if (!replies.length) throw new Error(`apply: the person hasn't answered ${c.id.slice(0, 8)} yet. Wait for their yes`);
+    const last = replies[replies.length - 1];
+    if (!isYes(last.body)) throw new Error(`apply: their last reply, "${words(last.body).slice(0, 80)}", isn't a plain yes. Nothing changed. Answer it with reply, or resolve it if it's a no`);
     // Its changes go together: each block must still read as it did when proposed, checked on one read first.
     commit(ctx, `the proposal ${c.id.slice(0, 8)}`, null, (html) => {
       const root = parse(html);
@@ -500,7 +551,7 @@ const COMMANDS = {
     if (alt.length) { ctx.log(`not done: ${alt.join(", ")} ${alt.length === 1 ? "is an alternative" : "are alternatives"} inside a blank. A blank is one value to fill in: write it as one, like [alone, or with whom], then done again`); return 1; }
     const open = ctx.io.comments().filter((c) => !c.reply_to && !c.resolved && !(L.proposals || {})[c.id]);
     if (open.length) ctx.log(`${open.length} open comment${open.length === 1 ? "" : "s"} on the page: run comments, and answer them before you reply`);
-    ctx.io.push({ status: "Ready to read" });
+    ctx.io.push({ status: "" }); // an empty status takes the work card down
     const blanks = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[[^\]]{1,80}\]/g) || []))];
     ctx.log(blanks.length ? `ready. Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}` : "ready.");
     return 0;
