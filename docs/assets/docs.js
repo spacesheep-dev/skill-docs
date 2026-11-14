@@ -662,8 +662,27 @@ function doneOnce(ctx) {
     ctx.log("checked and saved: open tabs say Done. Send nothing more to the page");
   } else if (cardUp(ctx)) ctx.io.push({ status: "" });
   const blanks = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[[^\]]{1,80}\]/g) || []))];
+  // The reply says what the person wrote on the page from this list, never from a guess.
+  const theirs = personBlocks(html, root, L);
+  ctx.log(theirs.length
+    ? `the person wrote ${theirs.length} block${theirs.length === 1 ? "" : "s"} on the page, left as they wrote ${theirs.length === 1 ? "it" : "them"}: ${theirs.map((b) => `${b.section === null ? "outside the sections" : "section " + b.section}: "${b.text.length > 60 ? b.text.slice(0, 60) + "…" : b.text}"`).join("; ")}. Say so in your reply`
+    : "no block in the document is the person's");
   ctx.log(blanks.length ? `ready. Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}` : "ready.");
   return 0;
+}
+
+// The person's own blocks in the document, with words in them: one they typed in or added inside a section,
+// and anything they put in it outside the sections. The title and the section headings aren't counted.
+function personBlocks(html, root, L) {
+  const doc = byId(root, "d-doc"), out = [];
+  if (!doc) return out;
+  for (const c of doc.children) {
+    const m = /^d-s(\d+)$/.exec(c.id || ""), n = m ? Number(m[1]) : -1;
+    const v = m && n <= L.sections ? sectionView(html, root, L, n) : null;
+    if (v) { for (const b of v.body) if (!v.mineOf(b)) out.push({ section: n, id: b.id, text: words(inner(html, b)) }); }
+    else if (c.id !== "d-title") out.push({ section: null, id: c.id, text: words(inner(html, c)) });
+  }
+  return out.filter((b) => b.text);
 }
 
 // The work card on open tabs: a status puts it up, and a save or an empty status takes it down. The folder keeps

@@ -73,6 +73,23 @@ module.exports = function ({ test, ROOT }) {
     assert.match(r.out, /\[landlord's name\], \[flat address\], \[start date\]/);
   });
 
+  test("done names the person's own blocks for the reply, and says when there are none", () => {
+    const { s, dir } = fresh();
+    writeAll(s, dir);
+    assert.match(go(s, dir, ["done"]).out, /no block in the document is the person's/);
+    const b = fresh();
+    writeAll(b.s, b.dir);
+    // Two lines added under a heading, the tool's own block typed over, a section of their own, an empty line.
+    b.s.person((h) => h
+      .replace(/(<h2 data-ss-id="d-s2-h"[^>]*>[\s\S]*?<\/h2>)/, '$1\n<p data-ss-id="auto-p-1">First line from the person.</p>\n<p>Second line.</p>\n<p><br></p>')
+      .replace(/(<p data-ss-id="d-s1-1"[^>]*>)[\s\S]*?(<\/p>)/, "$1Their words now.$2")
+      .replace(/(<section data-ss-id="d-s2")/, "<section><h2>My own part</h2><p>Mine.</p></section>\n$1"));
+    const r = go(b.s, b.dir, ["done"]);
+    assert.strictEqual(r.code, 0);
+    assert.match(r.out, /the person wrote 4 blocks on the page, left as they wrote them: section 1: "Their words now\."; outside the sections: "My own part Mine\."; section 2: "First line from the person\."; section 2: "Second line\."\. Say so in your reply/);
+    assert.doesNotMatch(r.out, /no block in the document is the person's/);
+  });
+
   test("text marks become only their own tags", () => {
     const b = D.blocksFromText("**bold** and *it* and [a link](https://example.com/?a=1&b=2)\n\n- one\n- two\n\n1. first\n\n### Sub\n\n> quoted");
     assert.deepStrictEqual(b.map((x) => x.tag), ["p", "ul", "ol", "h3", "blockquote"]);
