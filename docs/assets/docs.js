@@ -371,23 +371,31 @@ function afterSave(ctx, saved, status) {
   ctx.log("every section is written. Run done next: its save ends the run, and open tabs say Done then");
 }
 
-// done's save, the run's last: the ledger records that the page passed its checks. Its live change leaves the
-// page as it is (one word of the title for itself), so open tabs patch instead of reloading, and say "Done".
-function closeRun(ctx) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const r = ctx.io.read(), html = r.files["index.html"] || "", L = ledgerOf(html);
-    if (!L) throw new Error("done: this space holds no document from this skill");
-    if (L.checked) return;
-    const root = parse(html), title = byId(root, "d-title");
-    const word = title && /[A-Za-z0-9]+/.exec(inner(html, title).replace(/<[^>]*>|&[^;\s]*;/g, " "));
-    const live = word ? [{ anchor: "d-title", op: "sub", old: word[0], html: word[0] }] : [];
-    const NL = Object.assign({}, L, { checked: true });
-    try {
-      ctx.io.save(Object.assign({ parent: r.version, label: "Checked", replacements: [{ old_string: LEDGER.exec(html)[0], new_string: ledgerTag(NL) }] }, live.length ? { live_patch: live } : {}));
-      return;
-    } catch (e) { if (!isConflict(e)) throw e; ctx.log("done: the page changed while you checked; reading it again"); }
+// done's save, the run's last: the ledger records that the page passed its checks. It names the page from the
+// ledger to its end as done read it, so it saves only onto the version done checked: a change since, even one
+// landing during the save, makes it a conflict, and done checks the page again. Its live change leaves the page
+// as it is (one word of the page for itself), so open tabs patch instead of reloading, and say "Done". Answers
+// false on a conflict.
+function closeRun(ctx, r, html, L) {
+  const tag = LEDGER.exec(html)[0], from = html.indexOf(tag), span = html.slice(from);
+  const NL = Object.assign({}, L, { checked: true });
+  const live = noopPatch(html, parse(html), L);
+  try {
+    ctx.io.save(Object.assign({ parent: r.version, label: "Checked", replacements: [{ old_string: span, new_string: ledgerTag(NL) + span.slice(tag.length) }] }, live ? { live_patch: [live] } : {}));
+    return true;
+  } catch (e) { if (!isConflict(e)) throw e; return false; }
+}
+
+// A live change that changes nothing: one word of the title, or of the first block that has one, swapped for
+// itself. A word is a run of anything but spaces and what a tab writes back escaped (& < > and no-break
+// spaces), so a title in any script, or only an emoji, has one.
+function noopPatch(html, root, L) {
+  for (const id of ["d-title", ...Object.keys(L.blocks || {})]) {
+    const el = byId(root, id);
+    const w = el && /[^\s&<>"'\u00a0]+/u.exec(inner(html, el).replace(/<[^>]*>|&[^;\s]*;/g, " "));
+    if (w) return { anchor: id, op: "sub", old: w[0], html: w[0] };
   }
-  throw new Error("done: the page kept changing; run done again");
+  return null;
 }
 
 // Read, plan, show, save: the one path every change takes. A clash (someone changed the page since the read)
@@ -608,43 +616,55 @@ const COMMANDS = {
     return 0;
   },
 
+  // Checks the page as read, and saves "Checked" onto that same version; if it changed since, checks again.
   done(ctx) {
-    const html = ctx.io.read().files["index.html"] || "", L = ledgerOf(html);
-    if (!L) throw new Error("done: this space holds no document from this skill");
-    const root = parse(html), left = unwritten(html);
-    if (left.length) { ctx.log(`not done: section${left.length > 1 ? "s" : ""} ${left.join(", ")} still say "${PLACEHOLDER}". Write ${left.length > 1 ? "them" : "it"}, then done again`); return 1; }
-    // The length the person asked for, as the page prints: over it is not done.
-    if (L.pages) {
-      // Far over (more words than any page of this starter prints, measured at 520 a page) is said at once;
-      // anything nearer is printed and counted.
-      const total = L.sections >= 0 ? [...Array(L.sections + 1).keys()].reduce((t, k) => { const v = sectionView(html, root, L, k); return t + (v ? v.body.reduce((a, c) => a + words(inner(html, c)).split(" ").filter(Boolean).length, 0) : 0); }, 0) : 0;
-      const n = total > L.pages * WORDS_FAR ? Math.ceil(total / 450) : ctx.io.pdfPages();
-      if (n > L.pages) {
-        ctx.io.push({ status: `Shortening: ${n} pages, ${L.pages} asked for` });
-        const per = [];
-        for (let k = 0; k <= L.sections; k++) { const v = sectionView(html, root, L, k); if (v) per.push([k, v.body.reduce((t, c) => t + words(inner(html, c)).split(" ").filter(Boolean).length, 0)]); }
-        const total = per.reduce((t, x) => t + x[1], 0), cut = Math.ceil(total - (total * L.pages) / n * 0.9);
-        ctx.log(`not done: it prints on ${n} A4 pages, and the person asked for ${L.pages}. Cut about ${cut} of its ${total} words: what repeats first, then each section to what the reader needs. Write those sections again, then done again.`);
-        ctx.log(`words by section: ${per.map(([k, w]) => `${k}: ${w}`).join(", ")}`);
-        return 1;
-      }
-      ctx.log(`it prints on ${n} A4 page${n === 1 ? "" : "s"}, as asked`);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const code = doneOnce(ctx);
+      if (code !== null) return code;
+      ctx.log("done: the page changed while you checked; checking it again");
     }
-    // A blank is one value to fill in. An alternative sentence inside one ("[or: with whoever else]") isn't.
-    const alt = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[\s*or\b[^\]]{0,80}\]/gi) || []))];
-    if (alt.length) { ctx.log(`not done: ${alt.join(", ")} ${alt.length === 1 ? "is an alternative" : "are alternatives"} inside a blank. A blank is one value to fill in: write it as one, like [alone, or with whom], then done again`); return 1; }
-    const open = ctx.io.comments().filter((c) => !c.reply_to && !c.resolved && !(L.proposals || {})[c.id]);
-    if (open.length) ctx.log(`${open.length} open comment${open.length === 1 ? "" : "s"} on the page: run comments, and answer them before you reply`);
-    // Ready: the run ends on one save, and nothing goes after it, so open tabs say "Done" once. On a page done
-    // has checked before, a card a status left up (start on a finished document) comes down with an empty
-    // status instead.
-    if (!L.checked) { closeRun(ctx); ctx.log("checked and saved: open tabs say Done. Send nothing more to the page"); }
-    else if (cardUp(ctx)) ctx.io.push({ status: "" });
-    const blanks = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[[^\]]{1,80}\]/g) || []))];
-    ctx.log(blanks.length ? `ready. Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}` : "ready.");
-    return 0;
+    throw new Error("done: the page kept changing; run done again");
   },
 };
+
+function doneOnce(ctx) {
+  const r = ctx.io.read(), html = r.files["index.html"] || "", L = ledgerOf(html);
+  if (!L) throw new Error("done: this space holds no document from this skill");
+  const root = parse(html), left = unwritten(html);
+  if (left.length) { ctx.log(`not done: section${left.length > 1 ? "s" : ""} ${left.join(", ")} still say "${PLACEHOLDER}". Write ${left.length > 1 ? "them" : "it"}, then done again`); return 1; }
+  // The length the person asked for, as the page prints: over it is not done.
+  if (L.pages) {
+    // Far over (more words than any page of this starter prints, measured at 520 a page) is said at once;
+    // anything nearer is printed and counted.
+    const total = L.sections >= 0 ? [...Array(L.sections + 1).keys()].reduce((t, k) => { const v = sectionView(html, root, L, k); return t + (v ? v.body.reduce((a, c) => a + words(inner(html, c)).split(" ").filter(Boolean).length, 0) : 0); }, 0) : 0;
+    const n = total > L.pages * WORDS_FAR ? Math.ceil(total / 450) : ctx.io.pdfPages();
+    if (n > L.pages) {
+      ctx.io.push({ status: `Shortening: ${n} pages, ${L.pages} asked for` });
+      const per = [];
+      for (let k = 0; k <= L.sections; k++) { const v = sectionView(html, root, L, k); if (v) per.push([k, v.body.reduce((t, c) => t + words(inner(html, c)).split(" ").filter(Boolean).length, 0)]); }
+      const total = per.reduce((t, x) => t + x[1], 0), cut = Math.ceil(total - (total * L.pages) / n * 0.9);
+      ctx.log(`not done: it prints on ${n} A4 pages, and the person asked for ${L.pages}. Cut about ${cut} of its ${total} words: what repeats first, then each section to what the reader needs. Write those sections again, then done again.`);
+      ctx.log(`words by section: ${per.map(([k, w]) => `${k}: ${w}`).join(", ")}`);
+      return 1;
+    }
+    ctx.log(`it prints on ${n} A4 page${n === 1 ? "" : "s"}, as asked`);
+  }
+  // A blank is one value to fill in. An alternative sentence inside one ("[or: with whoever else]") isn't.
+  const alt = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[\s*or\b[^\]]{0,80}\]/gi) || []))];
+  if (alt.length) { ctx.log(`not done: ${alt.join(", ")} ${alt.length === 1 ? "is an alternative" : "are alternatives"} inside a blank. A blank is one value to fill in: write it as one, like [alone, or with whom], then done again`); return 1; }
+  const open = ctx.io.comments().filter((c) => !c.reply_to && !c.resolved && !(L.proposals || {})[c.id]);
+  if (open.length) ctx.log(`${open.length} open comment${open.length === 1 ? "" : "s"} on the page: run comments, and answer them before you reply`);
+  // Ready: the run ends on one save, and nothing goes after it, so open tabs say "Done" once. On a page done
+  // has checked before, a card a status left up (start on a finished document) comes down with an empty
+  // status instead.
+  if (!L.checked) {
+    if (!closeRun(ctx, r, html, L)) return null;
+    ctx.log("checked and saved: open tabs say Done. Send nothing more to the page");
+  } else if (cardUp(ctx)) ctx.io.push({ status: "" });
+  const blanks = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[[^\]]{1,80}\]/g) || []))];
+  ctx.log(blanks.length ? `ready. Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}` : "ready.");
+  return 0;
+}
 
 // The work card on open tabs: a status puts it up, and a save or an empty status takes it down. The folder keeps
 // which came last, across commands, so done knows whether a card is still up.

@@ -174,6 +174,60 @@ module.exports = function ({ test, ROOT }) {
     assert.strictEqual(D.ledgerOf(s.files["index.html"]).checked, true);
   });
 
+  test("after f606cd8's review: done's live change is a word of the title in any script, an emoji included, swapped for itself", () => {
+    for (const title of ["租房申请", "مرحبا", "🏠", "Tom & Jerry's flat"]) {
+      const s = fakeSpace(), dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-"));
+      go(s, dir, ["start", s.id]);
+      go(s, dir, ["outline", title, "H1"]);
+      go(s, dir, ["write", "0", "-"], "Opening.");
+      go(s, dir, ["write", "1", "-"], "One.");
+      assert.strictEqual(go(s, dir, ["done"]).code, 0, title);
+      const last = s.saves[s.saves.length - 1];
+      assert.strictEqual(last.label, "Checked", title);
+      assert.ok(last.live_patch && last.live_patch.length === 1, `${title}: the closing save patches open tabs instead of reloading them`);
+      const e = last.live_patch[0], h1 = s.files["index.html"].match(/<h1[^>]*data-ss-id="d-title"[^>]*>([\s\S]*?)<\/h1>/)[1];
+      assert.deepStrictEqual([e.anchor, e.op], ["d-title", "sub"], title);
+      assert.ok(e.old && e.old === e.html && h1.includes(e.old), `${title}: "${e.old}" is in the title as saved, and stays`);
+      assert.ok(!/[&<>\s]/.test(e.old), `${title}: nothing a tab writes back escaped`);
+    }
+  });
+
+  test("after f606cd8's review: a title with no word at all borrows one from the first block that has one", () => {
+    const s = fakeSpace(), dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-"));
+    go(s, dir, ["start", s.id]);
+    go(s, dir, ["outline", "T", "H1"]);
+    go(s, dir, ["write", "0", "-"], "Opening.");
+    go(s, dir, ["write", "1", "-"], "One.");
+    s.person((h) => h.replace(/(<h1[^>]*data-ss-id="d-title"[^>]*>)T(<\/h1>)/, "$1&amp;$2"));
+    assert.strictEqual(go(s, dir, ["done"]).code, 0);
+    const e = s.saves[s.saves.length - 1].live_patch[0];
+    assert.notStrictEqual(e.anchor, "d-title");
+    assert.ok(e.old === e.html && s.files["index.html"].includes(e.old));
+  });
+
+  test("after f606cd8's review: a change landing between done's checks and its save is checked before the page is marked checked", () => {
+    const { s, dir } = doc("One.");
+    go(s, dir, ["write", "0", "-"], "Opening.");
+    s.beforeSave = (x) => { x.person((h) => h.replace("One.", "[or: with whoever else]")); };
+    const r = go(s, dir, ["done"]);
+    assert.strictEqual(r.code, 1);
+    assert.match(r.out, /the page changed while you checked; checking it again[\s\S]*not done: \[or: with whoever else\] is an alternative/);
+    assert.notStrictEqual(D.ledgerOf(s.files["index.html"]).checked, true, "the page that failed the checks isn't marked checked");
+    assert.strictEqual(s.saves.filter((v) => v.label === "Checked").length, 0);
+  });
+
+  test("after f606cd8's review: done's save names the page as done checked it, from the ledger to the end", () => {
+    const { s, dir } = doc("One.");
+    go(s, dir, ["write", "0", "-"], "Opening.");
+    const before = s.files["index.html"];
+    assert.strictEqual(go(s, dir, ["done"]).code, 0);
+    const rep = s.saves[s.saves.length - 1].replacements;
+    assert.strictEqual(rep.length, 1);
+    assert.ok(before.endsWith(rep[0].old_string) && rep[0].old_string.startsWith('<meta name="docs-ledger"'));
+    const strip = (h) => h.replace(/<meta name="docs-ledger"[^>]*>/, "");
+    assert.strictEqual(strip(s.files["index.html"]), strip(before), "only the ledger changed");
+  });
+
   test("a section's status goes up again after its save, which takes the card down", () => {
     const { s, dir } = doc("One.");
     const seq = [];
