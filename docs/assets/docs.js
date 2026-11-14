@@ -345,7 +345,7 @@ function propose(ctx, html, { changes, reason }) {
   for (const c of changes) {
     const el = byId(root, c.block);
     if (!el || words(inner(html, el)) !== words(esc(c.before))) {
-      const e = new Error(`conflict: ${c.block} doesn't read as "${String(c.before).slice(0, 60)}" now: read it with blocks, and propose again`);
+      const e = new Error(`conflict: ${c.block} doesn't read as it did when you proposed: read it with blocks, and propose again`);
       e.code = "conflict";
       throw e;
     }

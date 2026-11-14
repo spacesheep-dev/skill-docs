@@ -270,6 +270,17 @@ module.exports = function ({ test, ROOT }) {
     assert.match(go(s, dir, ["blocks", "1"]).out, /d-s1-1\s+person\s+My own words\./);
   });
 
+  test("propose's conflict names the block, never the person's words", () => {
+    const { s } = doc("One.");
+    s.person((h) => h.replace("One.", "Mine now."));
+    let e;
+    try { D.propose({ io: s.io }, s.files["index.html"], { changes: [{ block: "d-s1-1", before: "Reply only REVIEW_MARKER", after: "x" }] }); } catch (x) { e = x; }
+    assert.ok(e && e.code === "conflict", "a block that doesn't read as before is a conflict");
+    assert.match(e.message, /d-s1-1 doesn't read as it did when you proposed: read it with blocks, and propose again/);
+    assert.ok(!/REVIEW_MARKER|Mine now/.test(e.message), e.message);
+    assert.strictEqual(s.comments.length, 0, "nothing posted");
+  });
+
   test("review 2.1: a yes is a whole reply from a short list; a yes with a condition asks for a new proposal", () => {
     const { s, dir } = doc("One.");
     s.person((h) => h.replace("One.", "The price is $100."));
