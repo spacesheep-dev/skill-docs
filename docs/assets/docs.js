@@ -30,7 +30,7 @@ const { execFileSync, execSync } = require("child_process");
 const STARTER = path.join(__dirname, "..", "references", "page.html");
 const WRITING = path.join(__dirname, "..", "references", "writing.md");
 const OUTLINE = path.join(__dirname, "..", "references", "outline.md");
-const BLANK_LIVE_LINK = path.join(__dirname, "blank-live-link.html");
+const BLANK_LIVE_LINK = path.join(__dirname, "blank-live-link.html"), BLANK_LIVE_LINK_NODESC = path.join(__dirname, "blank-live-link-nodesc.html");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PLACEHOLDER = "Writing…";
 const WORDS_FAR = 600; // words no A4 page of the starter holds
@@ -265,24 +265,25 @@ const spaceOf = (ctx) => { try { return fs.readFileSync(spaceFile(ctx.dir), "utf
 // A page that isn't a document from this skill: no ledger, and anything at all in its body. A short note, an image,
 // a table, an embed: each is the person's. Only an empty body is blank.
 // Blank is a short closed list of whole pages, compared after dropping whitespace: an empty file, this skill's
-// starter before any outline, and staging's "working on it" page (live_link, saved 14 Nov 2026), whose title and
-// description are plain-text slots. Everything else is the person's page, however empty it looks: a wrong "not
+// starter before any outline, and staging's "working on it" page (live_link, saved 14 Nov 2026) in its two forms,
+// with a description line and without, whose title and description are plain-text slots. Everything else is the person's page, however empty it looks: a wrong "not
 // blank" costs one question; a wrong "blank" deletes someone's work.
 const flat = (t) => String(t).replace(/\s+/g, "");
+// Each slot is text only and stays where it is, in its exact tag; nothing is taken out before the comparison.
 function liveLinkSlots(html) {
   let n = 0;
   const one = (re, to) => { html = html.replace(re, (...m) => { n++; return to(...m); }); };
   one(/<title>[^<]*<\/title>/, () => "<title>T</title>");
   one(/(<meta name="description" content="Spacesheep is working on it: )[^"<]*(">)/, (m, a, b) => a + "D" + b);
-  one(/(<p class="ll-what"[^>]*>)[^<]*(<\/p>)/, (m, a, b) => a + "T" + b);
-  html = html.replace(/<p class="ll-desc"[^>]*>[^<]*<\/p>/, "");
+  one(/(<p class="ll-what" data-ss-id="what" data-ss-react="off">)[^<]*(<\/p>)/, (m, a, b) => a + "T" + b);
+  html = html.replace(/(<p class="ll-desc" data-ss-id="desc" data-ss-react="off">)[^<]*(<\/p>)/, (m, a, b) => a + "D" + b);
   return n === 3 ? html : null;
 }
 let BLANKS = null;
 function blank(html) {
-  BLANKS = BLANKS || [flat(fs.readFileSync(STARTER, "utf8")), flat(fs.readFileSync(BLANK_LIVE_LINK, "utf8"))];
-  const h = flat(html), slotted = liveLinkSlots(String(html));
-  return h === "" || h === BLANKS[0] || (slotted !== null && flat(slotted) === BLANKS[1]);
+  BLANKS = BLANKS || [STARTER, BLANK_LIVE_LINK, BLANK_LIVE_LINK_NODESC].map((f) => flat(fs.readFileSync(f, "utf8")));
+  const h = flat(html), slotted = liveLinkSlots(String(html)), sf = slotted === null ? null : flat(slotted);
+  return h === "" || h === BLANKS[0] || sf === BLANKS[1] || sf === BLANKS[2];
 }
 const foreign = (html) => !ledgerOf(html) && !blank(html);
 const isConflict = (e) => e && (e.code === "conflict" || /conflict/i.test(String(e.message)));

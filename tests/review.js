@@ -222,4 +222,22 @@ module.exports = function ({ test, ROOT }) {
     }
   });
 
+
+  test("review 4.2: the placeholder's optional description stays where it is, as it is: moved or changed, the page is the person's", () => {
+    const llA = fs.readFileSync(path.join(__dirname, "fixtures", "staging-live-link-a.html"), "utf8");
+    const desc = /<p class="ll-desc"[^>]*>[^<]*<\/p>/.exec(llA)[0], without = llA.replace(desc, "");
+    const mutated = [
+      without.replace("</html>", "</html>" + desc),
+      without.replace("</head>", desc + "</head>"),
+      llA.replace(desc, desc.replace('data-ss-id="desc"', 'data-ss-id="person-note"')),
+      llA.replace(desc, desc.replace('<p class="ll-desc"', '<p style="color:red" class="ll-desc"')),
+      llA.replace(desc, desc.replace('<p class="ll-desc"', '<p onclick="x()" class="ll-desc"')),
+    ];
+    for (const page of mutated) {
+      const s = fakeSpace({ "index.html": page }), dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-"));
+      assert.notStrictEqual(go(s, dir, ["start", s.id]).code, 0, page.slice(0, 80));
+      assert.notStrictEqual(go(s, dir, ["outline", "T", "H1"]).code, 0);
+      assert.strictEqual(s.saves.length, 0);
+    }
+  });
 };
