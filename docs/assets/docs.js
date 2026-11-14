@@ -661,7 +661,11 @@ function doneOnce(ctx) {
     if (!closeRun(ctx, r, html, L)) return null;
     ctx.log("checked and saved: open tabs say Done. Send nothing more to the page");
   } else if (cardUp(ctx)) ctx.io.push({ status: "" });
-  const blanks = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[[^\]]{1,80}\]/g) || []))];
+  // Blanks are named only from the tool's own blocks, whose words it wrote: text in square brackets that the
+  // person typed is counted, never repeated, for the same reason as their blocks below.
+  const BLANK = /\[[^\]]{1,80}\]/g, doc = byId(root, "d-doc") || root, counts = idCounts(root), own = new Set();
+  walk(doc, (e) => { if (e.id && L.blocks[e.id] && counts[e.id] === 1 && sig(html, e) === L.blocks[e.id]) for (const b of words(inner(html, e)).match(BLANK) || []) own.add(b); });
+  const all = [...new Set(words(inner(html, doc)).match(BLANK) || [])], blanks = all.filter((b) => own.has(b)), more = all.length - blanks.length;
   // The reply says where the person wrote on the page from these counts, never from a guess. Their words stay out
   // of this line: it is read as the next step, and anyone who can type on the page would be writing into it.
   const theirs = personBlocks(html, root, L), per = new Map();
@@ -672,7 +676,8 @@ function doneOnce(ctx) {
   ctx.log(theirs.length
     ? `the person wrote ${theirs.length} block${theirs.length === 1 ? "" : "s"} on the page, left as they wrote ${it}: ${where}. Say so in your reply, by section; don't quote ${it}`
     : "no block in the document is the person's");
-  ctx.log(blanks.length ? `ready. Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}` : "ready.");
+  ctx.log(["ready.", blanks.length ? `Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}.` : "",
+    more ? `The person's own blocks hold ${more} more in square brackets: say so, without quoting ${more === 1 ? "it" : "them"}.` : ""].filter(Boolean).join(" "));
   return 0;
 }
 
