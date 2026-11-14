@@ -16,6 +16,8 @@ module.exports = function ({ test, ROOT }) {
     return { code, out: lines.join("\n") };
   };
   const page = (s) => s.files["index.html"];
+  // start, then outline: the two commands that make a document.
+  const begin = (s, dir, title, ...headings) => { assert.strictEqual(run(s, ["start", s.id], { dir }).code, 0); return run(s, ["outline", title, ...headings], { dir }); };
   const count = (hay, needle) => hay.split(needle).length - 1;
   // Which tool section each person block sits in, by the page's own <section data-ss-id="d-sN"> spans.
   const sectionOf = (html, needle) => {
@@ -26,7 +28,7 @@ module.exports = function ({ test, ROOT }) {
     return close > open ? null : best;
   };
   // The commands every test below must cover: a new command fails this until it is in the walk.
-  const WALKED = ["start", "write", "blocks", "done"];
+  const WALKED = ["start", "outline", "write", "blocks", "done"];
 
   test("every command the tool has is in the person's-block walk", () => {
     assert.deepStrictEqual(Object.keys(D.COMMANDS).sort(), WALKED.slice().sort());
@@ -34,7 +36,7 @@ module.exports = function ({ test, ROOT }) {
 
   test("a person's block survives every command, live and saved", () => {
     const s = fakeSpace(), dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-test-"));
-    assert.strictEqual(run(s, ["start", s.id, "Sublet proposal", "What I'm asking", "Why", "The subtenant", "Next steps"], { dir }).code, 0);
+    assert.strictEqual(begin(s, dir, "Sublet proposal", "What I'm asking", "Why", "The subtenant", "Next steps").code, 0);
     // The person, while the outline is up: types into one placeholder, adds a block with an id of their
     // own, adds one with none, splits a placeholder in two (its id now twice), and adds a whole section.
     const typed = '<p data-ss-id="d-s1-1" class="todo">Our cat stays with a friend.</p>';
@@ -81,6 +83,7 @@ module.exports = function ({ test, ROOT }) {
       ["blocks"],
       ["blocks", "2"],
       ["start", s.id],
+      ["outline", "Another title", "Another heading"],
       ["done"],
     ];
     for (const st of steps) {
@@ -98,7 +101,7 @@ module.exports = function ({ test, ROOT }) {
 
   test("a person's change that lands between the tool's read and its save is kept", () => {
     const s = fakeSpace(), dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-test-"));
-    run(s, ["start", s.id, "Title", "One"], { dir });
+    begin(s, dir, "Title", "One");
     D.run({ io: s.io, dir, log: () => {}, stdin: () => "First words." }, ["write", "1", "-"]);
     const theirs = "Their words, typed while the tool wrote.";
     s.beforeSave = (sp) => { sp.files["index.html"] = sp.files["index.html"].replace("First words.", theirs); };
@@ -113,16 +116,17 @@ module.exports = function ({ test, ROOT }) {
     const words = "<p>" + "A page someone wrote by hand, with plenty of words in it. ".repeat(8) + "</p>";
     const s = fakeSpace({ "index.html": `<!doctype html><html><head><title>x</title></head><body><h1>Mine</h1>${words}</body></html>` });
     const before = page(s);
-    const r = run(s, ["start", s.id, "Title", "One"]);
-    assert.notStrictEqual(r.code, 0);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-test-"));
+    assert.notStrictEqual(run(s, ["start", s.id], { dir }).code, 0);
+    assert.notStrictEqual(run(s, ["outline", "Title", "One"], { dir }).code, 0);
     assert.strictEqual(page(s), before);
-    assert.strictEqual(s.pushes.filter((p) => p.html || p.edits).length, 0);
+    assert.strictEqual(s.pushes.filter((p) => p.html || p.edits).length, 0, "nothing drawn over it");
     assert.strictEqual(s.saves.length, 0);
   });
 
   test("words that look like markup stay words", () => {
     const s = fakeSpace(), dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-test-"));
-    run(s, ["start", s.id, "T", "One"], { dir });
+    begin(s, dir, "T", "One");
     const evil = '<img src=x onerror="alert(1)"> </section><script>x()</script> <!-- & &amp; [a](javascript:alert(1))';
     D.run({ io: s.io, dir, log: () => {}, stdin: () => evil }, ["write", "1", "-"]);
     const h = page(s);

@@ -2,10 +2,11 @@
 // Every command the Docs skill runs, so a person allows this one script. It talks to one space through the
 // spacesheep CLI (the one on the PATH, else npx's copy), and writes only inside the folder given with -C.
 //
-//   node docs.js -C <folder> start <link> "<title>" "<heading>" ...   a status, then the title and every heading
-//                                          with a placeholder, on open tabs and saved. A space that holds a
-//                                          document already: what's in it, and the rest of the skill.
-//   node docs.js -C <folder> start --new "<title>" "<heading>" ...     a new space instead.
+//   node docs.js -C <folder> start <link>  a status on the space at once, then what it holds: nothing yet (and how
+//                                          to write the outline), or a document (its blocks, whose each is, and
+//                                          the rest of the skill). start --new "<title>" makes a new space.
+//   node docs.js -C <folder> outline "<title>" "<heading>" ... [--pages n]   the title and every heading, each
+//                                          section saying "Writing…", on open tabs and saved.
 //   node docs.js -C <folder> write <n> <file|-> ["<status>"]           section n (0 is the opening, before the
 //                                          first heading) from plain text: shown on open tabs, then saved.
 //   node docs.js -C <folder> blocks [n]    each block: its id, whose it is, its words. Only reads.
@@ -28,6 +29,7 @@ const { execFileSync, execSync } = require("child_process");
 
 const STARTER = path.join(__dirname, "..", "references", "page.html");
 const WRITING = path.join(__dirname, "..", "references", "writing.md");
+const OUTLINE = path.join(__dirname, "..", "references", "outline.md");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PLACEHOLDER = "Writing…";
 
@@ -191,6 +193,8 @@ function buildPage(starter, title, headings, pages) {
 const plain = (what, v) => { if (typeof v === "string" && v.startsWith("-") && v !== "-") throw new Error(`a ${what} can't start with "-"`); return v; };
 const spaceFile = (dir) => path.join(dir, ".docs", "space");
 const spaceOf = (ctx) => { try { return fs.readFileSync(spaceFile(ctx.dir), "utf8").trim(); } catch { return ""; } };
+// A page someone wrote that isn't a document from this skill: more than a few words, and no ledger.
+const foreign = (html) => !ledgerOf(html) && words(html.replace(/<(script|style|head)[\s\S]*?<\/\1>/gi, "")).length > 200;
 const isConflict = (e) => e && (e.code === "conflict" || /conflict/i.test(String(e.message)));
 
 function describe(html, only) {
@@ -208,43 +212,50 @@ function describe(html, only) {
 }
 
 const COMMANDS = {
+  // The space, a status on it at once, and what it holds. Nothing is decided yet, so it runs before any thinking.
   start(ctx, args) {
-    let pages = null;
-    const i = args.indexOf("--pages");
-    if (i >= 0) { pages = +args[i + 1]; args = args.slice(0, i).concat(args.slice(i + 2)); if (!(pages >= 1)) throw new Error("--pages takes a number: the length the person asked for"); }
     const fresh = args[0] === "--new";
-    const link = fresh ? null : plain("link", args[0]);
-    const title = plain("title", fresh ? args[1] : args[1]), headings = (args.slice(2)).map((h) => plain("heading", h));
-    if (!fresh && !link) throw new Error("start: give the space's link, then the title and headings; or --new \"<title>\" and headings");
+    const link = fresh ? null : plain("link", args[0]), title = fresh ? plain("title", args[1]) : null;
+    if (!fresh && !link) throw new Error("start: give the space's link; or --new \"<title>\" for a new space");
+    if (fresh && !title) throw new Error("start --new: give the document's title");
     let id = spaceOf(ctx);
     if (fresh) {
       if (id) throw new Error("start --new: this folder has a space already; use another folder");
-      if (!title || !headings.length) throw new Error("start --new: give the title and every heading");
       id = ctx.io.create(title);
     } else {
-      const want = ctx.io.resolve(link);
-      if (id && id !== want) throw new Error(`start: this folder is for space ${id}; use another folder for ${want}`);
-      id = want;
+      // The link as given: every call takes it, so the status goes up before anything else is asked.
+      if (id && id !== link) throw new Error(`start: this folder is for space ${id}; use another folder for ${link}`);
+      id = link;
     }
+    ctx.space = id;
+    ctx.io.push({ status: "Starting the document" });
     fs.mkdirSync(path.dirname(spaceFile(ctx.dir)), { recursive: true });
     fs.writeFileSync(spaceFile(ctx.dir), id);
-    ctx.space = id;
-    if (title && headings.length) ctx.io.push({ status: "Writing the outline" });
-    const r = ctx.io.read();
-    const html = r.files["index.html"] || "";
+    const html = ctx.io.read().files["index.html"] || "";
     if (ledgerOf(html)) {
-      if (title && headings.length) throw new Error("start: this space holds a document already. Change it with write; for a new one, start --new");
       ctx.log("This space holds a document. Its blocks, and whose each one is:");
       for (const l of describe(html)) ctx.log(l);
       ctx.log("\n" + fs.readFileSync(WRITING, "utf8"));
       return 0;
     }
-    const text = words(html.replace(/<(script|style|head)[\s\S]*?<\/\1>/gi, ""));
-    if (text.length > 200) {
-      if (title && headings.length) ctx.io.push({ status: "Stopped: this space holds another page", stopped: true });
+    if (foreign(html)) {
+      ctx.io.push({ status: "Stopped: this space holds another page", stopped: true });
       throw new Error("start: this space holds a page that isn't a document from this skill, and it's never written over. Ask the person, or start --new");
     }
-    if (!title || !headings.length) throw new Error("start: the space holds no document yet: give the title and every heading");
+    ctx.log("\n" + fs.readFileSync(OUTLINE, "utf8"));
+    return 0;
+  },
+
+  // The title and every heading, each section saying "Writing…", on open tabs and saved.
+  outline(ctx, args) {
+    let pages = null;
+    const i = args.indexOf("--pages");
+    if (i >= 0) { pages = +args[i + 1]; args = args.slice(0, i).concat(args.slice(i + 2)); if (!(pages >= 1)) throw new Error("--pages takes a number: the length the person asked for"); }
+    const title = plain("title", args[0]), headings = args.slice(1).map((h) => plain("heading", h));
+    if (!title || !headings.length) throw new Error("outline: give the title, then every heading");
+    const r = ctx.io.read(), html = r.files["index.html"] || "";
+    if (ledgerOf(html)) throw new Error("outline: this space has its outline already. Write its sections; for another document, start --new in a new folder");
+    if (foreign(html)) throw new Error("outline: this space holds a page that isn't a document from this skill, and it's never written over");
     const page = buildPage(fs.readFileSync(STARTER, "utf8"), title, headings, pages);
     const a = ctx.io.push({ html: page });
     ctx.io.save({ parent: r.version, label: "Outline", files: [{ path: "index.html", content: page }] });
@@ -305,6 +316,17 @@ const COMMANDS = {
       if (v && v.mine.some((c) => words(inner(html, c)) === PLACEHOLDER)) left.push(n);
     }
     if (left.length) { ctx.log(`not done: section${left.length > 1 ? "s" : ""} ${left.join(", ")} still say "${PLACEHOLDER}". Write ${left.length > 1 ? "them" : "it"}, then done again`); return 1; }
+    // The length the person asked for, as the page prints: over it is not done.
+    if (L.pages) {
+      ctx.io.push({ status: "Checking the printed length" });
+      const n = ctx.io.pdfPages();
+      if (n > L.pages) {
+        ctx.io.push({ status: `Shortening: ${n} pages, ${L.pages} asked for` });
+        ctx.log(`not done: it prints on ${n} A4 pages, and the person asked for ${L.pages}. Shorten it: cut what repeats, then each section to what the reader needs, and write those sections again. Then done again`);
+        return 1;
+      }
+      ctx.log(`it prints on ${n} A4 page${n === 1 ? "" : "s"}, as asked`);
+    }
     ctx.io.push({ status: "Ready to read" });
     const blanks = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[[^\]]{1,80}\]/g) || []))];
     ctx.log(blanks.length ? `ready. Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}` : "ready.");
@@ -343,9 +365,10 @@ const call = (tool, body) => {
     throw err;
   }
 };
+// A space by its id, or by the link or @handle/slug the person gave: every call takes either.
+const where = () => (UUID.test(ctx.space) ? { space_id: ctx.space } : { space: ctx.space });
 const ctx = { dir: DIR, log: (l) => console.log(l), stdin: () => fs.readFileSync(0, "utf8") };
 ctx.io = {
-  resolve(link) { return UUID.test(link) ? link : call("get_space", { space: link }).space.id; },
   create(title) {
     const w = path.join(DIR, ".docs", "new"); fs.mkdirSync(w, { recursive: true });
     fs.writeFileSync(path.join(w, "index.html"), `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title></head><body></body></html>\n`);
@@ -354,9 +377,17 @@ ctx.io = {
     console.log(`made a new space: ${(j.space || j).url || id}`);
     return id;
   },
-  read() { const j = call("get_file", { space_id: ctx.space, file: "index.html" }); return { version: j.version.id, files: { "index.html": j.file.content } }; },
-  push(body) { return call("push_live", Object.assign({ space_id: ctx.space }, body)); },
-  save(body) { const j = call("create_version", Object.assign({ space_id: ctx.space, client: { name: "docs-skill" } }, body)); return { version: j.version && j.version.id }; },
+  read() { const j = call("get_file", Object.assign(where(), { file: "index.html" })); return { version: j.version.id, files: { "index.html": j.file.content } }; },
+  push(body) { return call("push_live", Object.assign(where(), body)); },
+  // The saved version as it prints on A4, counted from the PDF's page tree.
+  pdfPages() {
+    const url = call("export_space", Object.assign(where(), { paper: "a4" })).url;
+    const pdf = execFileSync("curl", ["-sfL", "--max-time", "90", url], { maxBuffer: 64 << 20, timeout: 100000 });
+    const counts = [...pdf.toString("latin1").matchAll(/\/Count\s+(\d+)/g)].map((m) => +m[1]);
+    if (!counts.length) throw new Error("the PDF's page count couldn't be read");
+    return Math.max(...counts);
+  },
+  save(body) { const j = call("create_version", Object.assign(where(), { client: { name: "docs-skill" } }, body)); return { version: j.version && j.version.id }; },
 };
 const code = run(ctx, argv.slice(2));
 if (argv[2] !== "blocks") console.log(`(${took()})`);

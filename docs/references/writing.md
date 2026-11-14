@@ -46,8 +46,8 @@ People can type into the page while you write. `docs.js` keeps what they type:
 
 - Never invent a fact the person didn't give: a name, a date, an amount, an address, a
   clause. Write it in square brackets, `[landlord's name]`, for them to fill in.
-- Write to the length they asked for. A printed A4 page holds about 400 words with its
-  headings. With no length named, keep each section to what a reader needs.
+- Write to the length they asked for. A printed A4 page holds about 350 words with its
+  title and headings. With no length named, keep each section to what a reader needs.
 - Say each thing once, in the reader's words. No filler openings, no summary that
   repeats the sections.
 
@@ -55,7 +55,8 @@ People can type into the page while you write. `docs.js` keeps what they type:
 
     node docs.js -C <folder> done
 
-It checks that no section still says "Writing…", and lists the bracketed blanks. If it
-says not done, fix what it names, then `done` again. Then reply to the person in two or
-three lines: what the document holds, the blanks for them to fill in, and anything you'd
-change in words they typed.
+It checks that no section still says "Writing…", prints the page as A4 and counts it
+against `--pages`, and lists the bracketed blanks. If it says not done, fix what it names
+(over length: shorten sections with `write`), then `done` again. Say a length only as
+`done` counted it. Then reply to the person in two or three lines: what the document
+holds, the blanks for them to fill in, and anything you'd change in words they typed.

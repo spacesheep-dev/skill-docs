@@ -14,7 +14,6 @@ function fakeSpace(files = { "index.html": EMPTY }) {
     beforeSave: null, // a person's change that lands between the tool's read and its save, once
     head: () => "v" + v,
     io: {
-      resolve(link) { return link; },
       create() { return s.id; },
       read() { return { version: "v" + v, files: Object.assign({}, s.files) }; },
       push(body) { s.pushes.push(JSON.parse(JSON.stringify(body))); if (body.status) s.statuses.push(body.status); return { tabs_open: 1 }; },
