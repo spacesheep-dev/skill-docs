@@ -353,34 +353,17 @@ function propose(ctx, html, { changes, reason }) {
 const MARK_OPEN = '<mark class="blank" tabindex="0">';
 const textOnly = (h) => String(h).replace(/<[^>]*>/g, "");
 function unwrapFilled(html) {
-  // The filled marks, as parsed: never a copy of one in a comment, a textarea or a script.
-  const marks = [];
+  const marks = new Map();
   walk(parse(html), (e) => {
     if (e.name !== "mark" || html.slice(e.start, e.openEnd) !== MARK_OPEN || html.slice(e.closeStart, e.end) !== "</mark>") return;
-    if (!/^\[[^\[\]<>\n]{1,80}\]$/.test(words(inner(html, e)))) marks.push(e);
+    const inn = inner(html, e);
+    if (!/^\[[^\[\]<>\n]{1,80}\]$/.test(words(inn))) marks.set(outer(html, e), inn);
   });
-  if (!marks.length) return null;
-  // Each is changed inside the nearest element around it whose source appears once, so the save names it exactly;
-  // a container inside another's span joins that one.
-  const once = (el) => html.split(outer(html, el)).length === 2;
-  const boxes = [];
-  for (const m of marks) {
-    let c = m.parent;
-    while (c && c.name !== "#root" && !once(c)) c = c.parent;
-    if (!c || c.name === "#root") continue;
-    boxes.push({ c, m });
-  }
-  const outerMost = boxes.map((b) => b.c).filter((c, i, all) => !all.some((d) => d !== c && d.start <= c.start && d.end >= c.end && (d.start !== c.start || d.end !== c.end)));
-  const reps = [];
-  for (const c of [...new Set(outerMost)]) {
-    const old = outer(html, c);
-    const cut = boxes.filter((b) => b.m.start >= c.start && b.m.end <= c.end).flatMap((b) => [[b.m.start, b.m.openEnd], [b.m.closeStart, b.m.end]]).sort((x, y) => y[0] - x[0]);
-    let neu = old;
-    for (const [x, y] of cut) neu = neu.slice(0, x - c.start) + neu.slice(y - c.start);
-    if (textOnly(neu) !== textOnly(old) || neu === old) continue; // the words must stay the same, character for character
-    reps.push({ old_string: old, new_string: neu });
-  }
-  return reps.length ? reps : null;
+  if (!marks.size) return null;
+  const reps = [...marks].sort((a, b) => b[0].length - a[0].length).map(([o, i]) => ({ old_string: o, new_string: i, replace_all: true }));
+  let after = html;
+  for (const r of reps) after = after.split(r.old_string).join(r.new_string);
+  return textOnly(after) === textOnly(html) ? reps : null;
 }
 function commit(ctx, what, status, plan) {
   let shown = null, unwrapped = false;

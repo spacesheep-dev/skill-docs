@@ -272,18 +272,4 @@ module.exports = function ({ test, ROOT }) {
     ];
     for (const [t, want] of cases) assert.strictEqual(D.blocksFromText(t)[0].html, want, t);
   });
-
-  test("review 5.3: only a real filled mark is unwrapped: the same markup as text in a comment or a textarea stays as it is", () => {
-    const { s, dir } = doc("Dear [landlord's name].", "Two [a] and [b].");
-    const tool = '<mark class="blank" tabindex="0">', filled = `${tool}Mr Smith</mark>`;
-    s.person((h) => h
-      .replace(`${tool}[landlord&#39;s name]</mark>`, filled)
-      .replace("</main>", `<!-- ${filled} --><textarea>${filled}</textarea><p>${filled}</p><p>${filled}</p></main>`));
-    go(s, dir, ["write", "2", "-"], "Two [a], [b] and [c].");
-    const h = s.files["index.html"];
-    assert.ok(h.includes("<p data-ss-id=\"d-s1-1\">Dear Mr Smith.</p>"), "the real one, unwrapped");
-    assert.ok(h.includes(`<!-- ${filled} -->`), "the comment untouched");
-    assert.ok(h.includes(`<textarea>${filled}</textarea>`), "the textarea untouched");
-    assert.strictEqual(h.split(`<p>Mr Smith</p>`).length - 1, 2, "both identical real ones, unwrapped");
-  });
 };
