@@ -114,6 +114,8 @@ const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 function inline(s) {
   let h = esc(s);
   h = h.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g, (m, t, u) => `<a href="${u}">${t}</a>`);
+  // A blank, [what to fill in], is marked so the page can show it and Tab can reach it; print shows plain brackets.
+  h = h.replace(/(^|[^\w>])(\[[^\[\]<>\n]{1,80}\])(?!\()/g, '$1<mark class="blank" tabindex="0">$2</mark>');
   h = h.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
   h = h.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, "$1<em>$2</em>");
   return h;

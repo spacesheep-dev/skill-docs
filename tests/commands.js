@@ -101,4 +101,16 @@ module.exports = function ({ test, ROOT }) {
     go(s, dir, ["write", "0", "-"], "They would live there [alone, or with whom].");
     assert.strictEqual(go(s, dir, ["done"]).code, 0);
   });
+
+  test("a blank is marked for the screen and Tab, and done still lists it", () => {
+    const b = D.blocksFromText("Dear [landlord's name], see [the lease](https://example.com) and item a[1].");
+    assert.strictEqual(b[0].html, 'Dear <mark class="blank" tabindex="0">[landlord&#39;s name]</mark>, see <a href="https://example.com">the lease</a> and item a[1].');
+    const { s, dir } = fresh();
+    go(s, dir, ["write", "0", "-"], "Dear [landlord's name],");
+    go(s, dir, ["write", "1", "-"], "From [start date].");
+    go(s, dir, ["write", "2", "-"], "Thanks.");
+    assert.match(go(s, dir, ["done"]).out, /\[landlord's name\], \[start date\]/);
+    const css = fs.readFileSync(path.join(ROOT, "docs/references/page.html"), "utf8");
+    assert.match(css, /@media print \{[\s\S]*mark\.blank \{ background: none/, "plain brackets in print");
+  });
 };

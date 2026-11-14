@@ -8,17 +8,17 @@
 <meta name="docs-ledger" content="">
 <style>
 :root {
-  --paper: #fdfcfa; --ink: #1d1c1a; --soft: #5e5a54; --rule: #e4e0d9; --link: #2453a6; --todo: #9a948b;
+  --paper: #fdfcfa; --ink: #1d1c1a; --soft: #5e5a54; --rule: #e4e0d9; --link: #2453a6; --todo: #9a948b; --blank: #f1e8cf;
   --body: "Iowan Old Style", "Charter", "Georgia", "Times New Roman", serif;
   --head: ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --paper: #191816; --ink: #ece8e1; --soft: #aaa399; --rule: #34312c; --link: #8fb1ff; --todo: #77716a; }
+  :root { --paper: #191816; --ink: #ece8e1; --soft: #aaa399; --rule: #34312c; --link: #8fb1ff; --todo: #77716a; --blank: #3b3626; }
 }
 * { box-sizing: border-box; }
 html { background: var(--paper); color: var(--ink); -webkit-text-size-adjust: 100%; }
 body { margin: 0; font: 18px/1.6 var(--body); }
-main { max-width: 42rem; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+main { max-width: calc(65ch + 2.5rem); margin: 0 auto; padding: 3rem 1.25rem 5rem; }
 h1, h2, h3 { font-family: var(--head); line-height: 1.25; letter-spacing: -0.01em; }
 h1 { font-size: 2rem; margin: 0 0 1rem; }
 h2 { font-size: 1.25rem; margin: 2.25rem 0 0.5rem; }
@@ -28,7 +28,9 @@ ul, ol { padding-left: 1.4rem; }
 li { margin: 0.25rem 0; }
 blockquote { border-left: 3px solid var(--rule); padding-left: 1rem; color: var(--soft); }
 a { color: var(--link); }
-section[data-ss-id="d-s0"] p { font-size: 1.1rem; color: var(--soft); }
+section[data-ss-id="d-s0"] p { font-size: 1.1rem; }
+mark.blank { background: var(--blank); color: inherit; border-radius: 3px; padding: 0 0.15em; }
+mark.blank:focus { outline: 2px solid var(--link); outline-offset: 1px; }
 .todo:empty::before { content: "Writing…"; color: var(--todo); font-style: italic; }
 @media (max-width: 480px) { body { font-size: 17px; } main { padding-top: 2rem; } h1 { font-size: 1.6rem; } }
 @page { size: A4; margin: 16mm 18mm; }
@@ -40,7 +42,8 @@ section[data-ss-id="d-s0"] p { font-size: 1.1rem; color: var(--soft); }
   h2 { font-size: 12.5pt; margin: 12pt 0 3pt; break-after: avoid; }
   h3 { font-size: 11pt; margin: 8pt 0 2pt; break-after: avoid; }
   p, ul, ol, blockquote { margin: 0 0 6pt; }
-  section[data-ss-id="d-s0"] p { font-size: 11.5pt; color: #333; }
+  section[data-ss-id="d-s0"] p { font-size: 11.5pt; }
+  mark.blank { background: none; padding: 0; }
   a { color: inherit; }
 }
 </style>
