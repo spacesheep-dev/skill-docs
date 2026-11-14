@@ -10,7 +10,8 @@
 //   node docs.js -C <folder> write <n> <file|-> ["<status>"]           section n (0 is the opening, before the
 //                                          first heading) from plain text: shown on open tabs, then saved.
 //   node docs.js -C <folder> blocks [n]    each block: its id, whose it is, its words. Only reads.
-//   node docs.js -C <folder> done          checks nothing still says "Writing…", then says it's ready.
+//   node docs.js -C <folder> done          checks nothing still says "Writing…", then says it's ready. It sends
+//                                          nothing to the page then: the last section's save said "Done" there.
 //
 // The agent writes text, never HTML: paragraphs split by a blank line, "- " lines a list, "1. " lines a numbered
 // list, a "### " line a subheading, "> " lines a quote, **bold**, *italics* and [words](https://link). Every
@@ -160,6 +161,17 @@ function sectionView(html, root, L, n) {
   const body = sec.children.filter((c) => c.id !== head);
   const mineOf = (c) => !!(c.id && L.blocks[c.id] && counts[c.id] === 1 && sig(html, c) === L.blocks[c.id]);
   return { sec, body, mine: body.filter(mineOf), mineOf };
+}
+// The sections still saying "Writing…": one of the tool's blocks in them has no words yet.
+function unwritten(html) {
+  const L = ledgerOf(html), left = [];
+  if (!L) return left;
+  const root = parse(html);
+  for (let n = 0; n <= L.sections; n++) {
+    const v = sectionView(html, root, L, n);
+    if (v && v.mine.some((c) => words(inner(html, c)) === "")) left.push(n);
+  }
+  return left;
 }
 
 // Section n rewritten from text: the save's replacements, the live edits, the new ledger, what was kept.
@@ -356,7 +368,7 @@ function commit(ctx, what, status, plan) {
     if (shown) repair(ctx, html, shown, p ? p.edits : []);
     if (failed) throw failed;
     if (p.kept && p.kept.length) ctx.log(`the person changed ${p.kept.join(", ")}: theirs now, left as they wrote it. Your words went around them; to change theirs, propose`);
-    if (!p.edits.length && !(p.kept && p.kept.length)) { if (status) ctx.io.push({ status }); ctx.log(`${what}: nothing changed`); return; }
+    if (!p.edits.length && !(p.kept && p.kept.length)) { if (status && unwritten(html).length) ctx.io.push({ status }); ctx.log(`${what}: nothing changed`); return; }
     if (p.edits.length) {
       const a = ctx.io.push(Object.assign({ edits: p.edits }, status ? { status: status.slice(0, 200) } : {}));
       shown = p.edits;
@@ -369,9 +381,13 @@ function commit(ctx, what, status, plan) {
       ctx.log(`${what}: the page changed while you wrote; reading it again`);
       continue;
     }
-    // A save takes the work card down; the work goes on, so the status goes back up.
-    if (status) ctx.io.push({ status: status.slice(0, 200) });
     ctx.log(`${what}: ${p.edits.length} change${p.edits.length === 1 ? "" : "s"}, saved`);
+    // A save says "Done" on open tabs and takes the work card down. While a section still says "Writing…" the
+    // work goes on, so the status goes back up. Once every section is written, this save is the end: nothing
+    // goes after it, so "Done" is the last thing the card says.
+    const saved = p.replacements.reduce((h, x) => h.replace(x.old_string, () => x.new_string), html);
+    if (status && unwritten(saved).length) ctx.io.push({ status: status.slice(0, 200) });
+    else if (!unwritten(saved).length) ctx.log("every section is written: open tabs say Done. Run done next");
     return;
   }
   throw new Error(`${what} kept changing under you; run blocks and try again`);
@@ -566,18 +582,13 @@ const COMMANDS = {
   done(ctx) {
     const html = ctx.io.read().files["index.html"] || "", L = ledgerOf(html);
     if (!L) throw new Error("done: this space holds no document from this skill");
-    const root = parse(html), left = [];
-    for (let n = 0; n <= L.sections; n++) {
-      const v = sectionView(html, root, L, n);
-      if (v && v.mine.some((c) => words(inner(html, c)) === "")) left.push(n);
-    }
+    const root = parse(html), left = unwritten(html);
     if (left.length) { ctx.log(`not done: section${left.length > 1 ? "s" : ""} ${left.join(", ")} still say "${PLACEHOLDER}". Write ${left.length > 1 ? "them" : "it"}, then done again`); return 1; }
     // The length the person asked for, as the page prints: over it is not done.
     if (L.pages) {
       // Far over (more words than any page of this starter prints, measured at 520 a page) is said at once;
       // anything nearer is printed and counted.
       const total = L.sections >= 0 ? [...Array(L.sections + 1).keys()].reduce((t, k) => { const v = sectionView(html, root, L, k); return t + (v ? v.body.reduce((a, c) => a + words(inner(html, c)).split(" ").filter(Boolean).length, 0) : 0); }, 0) : 0;
-      ctx.io.push({ status: "Checking the printed length" });
       const n = total > L.pages * WORDS_FAR ? Math.ceil(total / 450) : ctx.io.pdfPages();
       if (n > L.pages) {
         ctx.io.push({ status: `Shortening: ${n} pages, ${L.pages} asked for` });
@@ -595,17 +606,32 @@ const COMMANDS = {
     if (alt.length) { ctx.log(`not done: ${alt.join(", ")} ${alt.length === 1 ? "is an alternative" : "are alternatives"} inside a blank. A blank is one value to fill in: write it as one, like [alone, or with whom], then done again`); return 1; }
     const open = ctx.io.comments().filter((c) => !c.reply_to && !c.resolved && !(L.proposals || {})[c.id]);
     if (open.length) ctx.log(`${open.length} open comment${open.length === 1 ? "" : "s"} on the page: run comments, and answer them before you reply`);
-    ctx.io.push({ status: "" }); // an empty status takes the work card down
+    // After a save, nothing is sent: its "Done" is the last thing the card says. A card a status left up (start
+    // on a finished document, a write that changed nothing) comes down with an empty status instead.
+    if (cardUp(ctx)) ctx.io.push({ status: "" });
     const blanks = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[[^\]]{1,80}\]/g) || []))];
     ctx.log(blanks.length ? `ready. Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}` : "ready.");
     return 0;
   },
 };
 
+// The work card on open tabs: a status puts it up, and a save or an empty status takes it down. The folder keeps
+// which came last, across commands, so done knows whether a card is still up.
+const cardFile = (dir) => path.join(dir, ".docs", "card");
+const cardUp = (ctx) => { try { return fs.readFileSync(cardFile(ctx.dir), "utf8").trim() === "up"; } catch { return false; } };
+function watchCard(ctx) {
+  const io = ctx.io, mark = (state) => { try { fs.mkdirSync(path.dirname(cardFile(ctx.dir)), { recursive: true }); fs.writeFileSync(cardFile(ctx.dir), state); } catch {} };
+  ctx.io = Object.assign({}, io, {
+    push(body) { const a = io.push(body); if (body.status !== undefined) mark(body.status ? "up" : "down"); return a; },
+    save(body) { const v = io.save(body); mark("down"); return v; },
+  });
+}
+
 function run(ctx, argv) {
   const [cmd, ...args] = argv;
   const f = COMMANDS[cmd];
   if (!f) { ctx.log(`docs.js: unknown command ${cmd || "(none)"}: ${Object.keys(COMMANDS).join(", ")}`); return 2; }
+  watchCard(ctx);
   if (cmd !== "start" && !ctx.space) ctx.space = spaceOf(ctx);
   if (cmd !== "start" && !ctx.space) { ctx.log(`docs.js: ${cmd}: no space yet; run start first, in this folder`); return 2; }
   try { return f(ctx, args); } catch (e) { ctx.log(`docs.js: ${e.message}`); return 1; }

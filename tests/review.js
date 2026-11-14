@@ -81,12 +81,45 @@ module.exports = function ({ test, ROOT }) {
     assert.strictEqual(after.slice(after.indexOf("<textarea>"), after.indexOf("</textarea>")), before.slice(before.indexOf("<textarea>"), before.indexOf("</textarea>")), "the textarea's text is unchanged");
   });
 
-  test("review 7: done takes the status card down instead of putting up a new one", () => {
+  // Every push and save, in order: "status" for a status alone, "push" for a page or edits, "save".
+  const record = (s) => {
+    const seq = [], push = s.io.push, save = s.io.save;
+    s.io.push = (b) => { seq.push(b.status !== undefined && !b.edits && !b.html ? (b.status ? "status" : "empty status") : "push"); return push(b); };
+    s.io.save = (b) => { seq.push("save"); return save(b); };
+    return seq;
+  };
+
+  test("review 7: the last section's save ends the run on the page: nothing after it, done included, so open tabs end on Done", () => {
+    const s = fakeSpace(), dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-"));
+    const seq = record(s);
+    go(s, dir, ["start", s.id]);
+    go(s, dir, ["outline", "T", "H1", "H2", "--pages", "1"]);
+    go(s, dir, ["write", "0", "-", "Writing H1"], "Opening.");
+    go(s, dir, ["write", "1", "-", "Writing H2"], "One.");
+    const r = go(s, dir, ["write", "2", "-", "Checking the page"], "Two.");
+    assert.match(r.out, /every section is written/);
+    assert.strictEqual(go(s, dir, ["done"]).code, 0);
+    assert.deepStrictEqual(seq, ["status", "push", "save", "status", "push", "save", "status", "push", "save", "status", "push", "save"],
+      "a status after every save but the last; done sends nothing");
+  });
+
+  test("done takes down a card a status left up, with no save after it", () => {
     const { s, dir } = doc("One.");
     go(s, dir, ["write", "0", "-"], "Opening.");
+    const seq = record(s);
+    go(s, dir, ["start", s.id]); // a later session on the finished document
     assert.strictEqual(go(s, dir, ["done"]).code, 0);
-    const last = s.pushes[s.pushes.length - 1];
-    assert.deepStrictEqual(last, { status: "" });
+    assert.deepStrictEqual(seq, ["status", "empty status"]);
+  });
+
+  test("a rewrite after every section is written ends on its save too, and a write that changes nothing sends no status", () => {
+    const { s, dir } = doc("One.");
+    go(s, dir, ["write", "0", "-"], "Opening.");
+    const seq = record(s);
+    go(s, dir, ["write", "1", "-", "Shortening H1"], "Shorter.");
+    go(s, dir, ["write", "1", "-", "Shortening H1"], "Shorter.");
+    assert.strictEqual(go(s, dir, ["done"]).code, 0);
+    assert.deepStrictEqual(seq, ["push", "save"]);
   });
 
   test("a section's status goes up again after its save, which takes the card down", () => {
