@@ -35,7 +35,6 @@ const BLANK_LIVE_LINK = path.join(__dirname, "blank-live-link.html"), BLANK_LIVE
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PLACEHOLDER = "Writing…";
 const WORDS_FAR = 600; // words no A4 page of the starter holds
-const NAMED = 8; // the person's blocks done names before "and N more", so the reply never recites a page of them
 
 // --- reading a page: elements, their ids, their spans (pure) ---
 const VOID = new Set("area base br col embed hr img input link meta param source track wbr".split(" "));
@@ -663,12 +662,15 @@ function doneOnce(ctx) {
     ctx.log("checked and saved: open tabs say Done. Send nothing more to the page");
   } else if (cardUp(ctx)) ctx.io.push({ status: "" });
   const blanks = [...new Set((words(inner(html, byId(root, "d-doc") || root)).match(/\[[^\]]{1,80}\]/g) || []))];
-  // The reply says what the person wrote on the page from this list, never from a guess.
-  const theirs = personBlocks(html, root, L);
-  const named = theirs.slice(0, NAMED).map((b) => `${b.section === null ? "outside the sections" : "section " + b.section}: "${b.text.length > 60 ? b.text.slice(0, 60) + "…" : b.text}"`).join("; ")
-    + (theirs.length > NAMED ? `; and ${theirs.length - NAMED} more` : "");
+  // The reply says where the person wrote on the page from these counts, never from a guess. Their words stay out
+  // of this line: it is read as the next step, and anyone who can type on the page would be writing into it.
+  const theirs = personBlocks(html, root, L), per = new Map();
+  for (const b of theirs) per.set(b.section, (per.get(b.section) || 0) + 1);
+  const where = [...per].sort((a, b) => (a[0] === null) - (b[0] === null) || a[0] - b[0])
+    .map(([n, k]) => `${k} ${n === null ? "outside the sections" : "in section " + n}`).join(", ");
+  const it = theirs.length === 1 ? "it" : "them";
   ctx.log(theirs.length
-    ? `the person wrote ${theirs.length} block${theirs.length === 1 ? "" : "s"} on the page, left as they wrote ${theirs.length === 1 ? "it" : "them"}: ${named}. Say so in your reply`
+    ? `the person wrote ${theirs.length} block${theirs.length === 1 ? "" : "s"} on the page, left as they wrote ${it}: ${where}. Say so in your reply, by section; don't quote ${it}`
     : "no block in the document is the person's");
   ctx.log(blanks.length ? `ready. Name these blanks in your reply, for the person to fill in: ${blanks.join(", ")}` : "ready.");
   return 0;
