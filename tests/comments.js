@@ -86,4 +86,16 @@ module.exports = function ({ test, ROOT }) {
     s.person((h) => h.replace(/(<p data-ss-id="d-s1-2">)[^<]*/, "$1Theirs."));
     assert.match(go(s, dir, ["edit", "d-s1-2", "-"], "x").out, /is the person's: propose/);
   });
+
+  test("propose takes changes [{block, before, after}] and a reason, and refuses as a conflict when before isn't what the block reads", () => {
+    const { s } = doc();
+    const html = s.files["index.html"], n = s.comments.length;
+    assert.throws(() => D.propose({ io: s.io }, html, { changes: [{ block: "d-s1-1", before: "Not what it says.", after: "x" }], reason: "r" }), (e) => e.code === "conflict");
+    assert.strictEqual(s.comments.length, n, "nothing posted on a conflict");
+    const ids = D.propose({ io: s.io }, html, { changes: [{ block: "d-s1-1", before: "Section 1, first.", after: "Tighter." }], reason: "Shorter, as asked." });
+    assert.strictEqual(ids.length, 1);
+    const c = s.comments[s.comments.length - 1];
+    assert.deepStrictEqual([c.block, c.quote], ["d-s1-1", "Section 1, first."]);
+    assert.match(c.body, /> Tighter\.[\s\S]*Shorter, as asked\./);
+  });
 };

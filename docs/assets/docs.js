@@ -256,11 +256,24 @@ function findComment(ctx, ref) {
   if (hits.length !== 1) throw new Error(`no single open comment starts with ${ref}: comments lists them`);
   return hits[0];
 }
-// The one place a change to the person's words is asked for. Today a comment pinned to their block; when pages
-// have suggestions, only this changes.
-function propose(ctx, block, old, text) {
-  const body = `${AGENT}I'd change this to:\n\n${String(text).trim().split("\n").map((l) => "> " + l).join("\n")}\n\nReply yes to make the change, or say what you'd rather.`;
-  return ctx.io.comment({ block, quote: old.slice(0, 2000), body }).id;
+// The one place a change to the person's words is asked for, shaped as the platform's suggestions will take it
+// (create_suggestion { space, changes: [{block, before, after}], reason }): refused as a conflict when a block no
+// longer reads `before`. Today each change is a comment pinned to its block, quoting it; when pages have
+// suggestions, only this function changes. Answers the ids it made, one per change.
+function propose(ctx, html, { changes, reason }) {
+  const root = parse(html);
+  for (const c of changes) {
+    const el = byId(root, c.block);
+    if (!el || words(inner(html, el)) !== words(esc(c.before))) {
+      const e = new Error(`conflict: ${c.block} doesn't read as "${String(c.before).slice(0, 60)}" now: read it with blocks, and propose again`);
+      e.code = "conflict";
+      throw e;
+    }
+  }
+  return changes.map((c) => {
+    const body = `${AGENT}I'd change this to:\n\n${String(c.after).trim().split("\n").map((l) => "> " + l).join("\n")}\n\n${reason ? reason.trim() + "\n\n" : ""}Reply yes to make the change, or say what you'd rather.`;
+    return ctx.io.comment({ block: c.block, quote: String(c.before).slice(0, 2000), body }).id;
+  });
 }
 // Read, plan, show, save: the one path every change takes. A clash (someone changed the page since the read)
 // puts the saved words back on screen where this showed others, and plans again from a new read.
@@ -398,8 +411,8 @@ const COMMANDS = {
   // A change to the person's words, asked for: a comment pinned to their block, quoting it. Nothing changes yet.
   propose(ctx, args) {
     const id = plain("block", args[0]);
-    if (!id) throw new Error("propose: give the person's block id, then a file or - for stdin with the words you'd put there");
-    const text = textArg(ctx, args[1], "propose");
+    if (!id) throw new Error("propose: give the person's block id, then a file or - for stdin with the words you'd put there, then why, in a few words");
+    const text = textArg(ctx, args[1], "propose"), reason = plain("reason", args[2]);
     for (let attempt = 0; attempt < 3; attempt++) {
       const r = ctx.io.read(), html = r.files["index.html"] || "", L = ledgerOf(html);
       if (!L) throw new Error("propose: this space holds no document from this skill");
@@ -407,7 +420,7 @@ const COMMANDS = {
       if (!el) throw new Error(`propose: no block ${id}, or it appears twice: run blocks`);
       if (L.blocks[id] && sig(html, el) === L.blocks[id] && idCounts(root)[id] === 1) throw new Error(`propose: ${id} is yours, not the person's: change it with edit`);
       if (!blocksFromText(text).length) throw new Error("propose: give the words you'd put in its place");
-      const cid = propose(ctx, id, words(inner(html, el)), text);
+      const [cid] = propose(ctx, html, { changes: [{ block: id, before: words(inner(html, el)), after: text }], reason: reason || "" });
       const NL = JSON.parse(JSON.stringify(L));
       NL.proposals = NL.proposals || {};
       NL.proposals[cid] = { block: id, sig: sig(html, el), text: String(text) };
