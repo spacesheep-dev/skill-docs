@@ -411,6 +411,38 @@ module.exports = function ({ test, ROOT }) {
     }
   });
 
+  test("a space made with New space or Start from blank is blank, whatever its title; one typed line makes it the person's", () => {
+    const sheet = fs.readFileSync(path.join(__dirname, "fixtures", "staging-new-space.html"), "utf8");
+    const titled = (t) => sheet.replace("<title>Untitled</title>", `<title>${t}</title>`);
+    const tryStart = (page) => { const s = fakeSpace({ "index.html": page }), dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-review-")); return { s, start: go(s, dir, ["start", s.id]), outline: go(s, dir, ["outline", "Letter", "Opening"]).code }; };
+    // The app's sheet, as staging saved it, with any plain-text title: written on at once, with no question.
+    for (const page of [sheet, titled("Untitled document"), titled("Letter to Ms Patel &amp; co"), titled("租房申请 🏠"), titled(""), sheet.replace(/\n/g, "\n  ")]) {
+      const r = tryStart(page);
+      assert.strictEqual(r.start.code, 0, `blank: ${/<title>[^<]*/.exec(page)[0]}`);
+      assert.ok(!/never written over/.test(r.start.out));
+      assert.strictEqual(r.outline, 0);
+      assert.ok(r.s.files["index.html"].includes("Letter"), "the outline is on the page");
+    }
+    // Anything a person added, and any other change to the sheet: the page is theirs, refused, and left as it was.
+    const off = [
+      sheet.replace('<body data-ss-id="body"></body>', '<body data-ss-id="body"><p>One typed line.</p></body>'),
+      sheet.replace('<body data-ss-id="body"></body>', '<body data-ss-id="body"><h1>Untitled</h1></body>'),
+      sheet.replace('<body data-ss-id="body"></body>', '<body data-ss-id="body"><img src="plan.png"></body>'),
+      sheet.replace("</body>", "</body><p>After the body.</p>"),
+      sheet.replace("</head>", "<script>draw()</script></head>"),
+      sheet.replace("html{background:#fff}", "html{background:#000}"),
+      sheet.replace("<title>Untitled</title>", "<title>Untitled</title><title>Two</title>"),
+      sheet.replace('data-ss-id="body"', 'data-ss-id="body" class="mine"'),
+    ];
+    for (const page of off) {
+      const r = tryStart(page);
+      assert.notStrictEqual(r.start.code, 0, `not blank: ${page.slice(-120)}`);
+      assert.notStrictEqual(r.outline, 0);
+      assert.strictEqual(r.s.files["index.html"], page);
+      assert.strictEqual(r.s.saves.length, 0, "no save");
+    }
+  });
+
   test("review 5.2: blanks, bold and italics mark only text, never a link's address", () => {
     const cases = [
       ["[policy](https://[2001:db8::1]/health)", '<a href="https://[2001:db8::1]/health">policy</a>'],
