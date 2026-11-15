@@ -32,6 +32,7 @@ const STARTER = path.join(__dirname, "..", "references", "page.html");
 const WRITING = path.join(__dirname, "..", "references", "writing.md");
 const OUTLINE = path.join(__dirname, "..", "references", "outline.md");
 const BLANK_LIVE_LINK = path.join(__dirname, "blank-live-link.html"), BLANK_LIVE_LINK_NODESC = path.join(__dirname, "blank-live-link-nodesc.html");
+const BLANK_NEW_SPACE = path.join(__dirname, "blank-new-space.html");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PLACEHOLDER = "Writing…";
 const WORDS_FAR = 600; // words no A4 page of the starter holds
@@ -278,8 +279,9 @@ const spaceOf = (ctx) => { try { return fs.readFileSync(spaceFile(ctx.dir), "utf
 // A page that isn't a document from this skill: no ledger, and anything at all in its body. A short note, an image,
 // a table, an embed: each is the person's. Only an empty body is blank.
 // Blank is a short closed list of whole pages, compared after dropping whitespace: an empty file, this skill's
-// starter before any outline, and staging's "working on it" page (live_link, saved 14 Nov 2026) in its two forms,
-// with a description line and without, whose title and description are plain-text slots. Everything else is the person's page, however empty it looks: a wrong "not
+// starter before any outline, staging's "working on it" page (live_link, saved 14 Nov 2026) in its two forms,
+// with a description line and without, whose title and description are plain-text slots, and the app's empty
+// sheet a space starts as from New space or Start from blank (saved 15 Nov 2026), whose title is a plain-text slot. Everything else is the person's page, however empty it looks: a wrong "not
 // blank" costs one question; a wrong "blank" deletes someone's work.
 const flat = (t) => String(t).replace(/\s+/g, "");
 // Each slot is text only and stays where it is, in its exact tag; nothing is taken out before the comparison.
@@ -292,11 +294,18 @@ function liveLinkSlots(html) {
   html = html.replace(/(<p class="ll-desc" data-ss-id="desc" data-ss-react="off">)[^<]*(<\/p>)/, (m, a, b) => a + "D" + b);
   return n === 3 ? html : null;
 }
+// The new space's sheet has one slot, its title: the one <title>, text only. Its body is empty, so a block anyone
+// adds, typed or pasted, makes the page the person's.
+function newSpaceSlots(html) {
+  const titles = html.match(/<title\b/g) || [];
+  return titles.length === 1 && /<title>[^<]*<\/title>/.test(html) ? html.replace(/<title>[^<]*<\/title>/, "<title>T</title>") : null;
+}
 let BLANKS = null;
 function blank(html) {
-  BLANKS = BLANKS || [STARTER, BLANK_LIVE_LINK, BLANK_LIVE_LINK_NODESC].map((f) => flat(fs.readFileSync(f, "utf8")));
+  BLANKS = BLANKS || [STARTER, BLANK_LIVE_LINK, BLANK_LIVE_LINK_NODESC, BLANK_NEW_SPACE].map((f) => flat(fs.readFileSync(f, "utf8")));
   const h = flat(html), slotted = liveLinkSlots(String(html)), sf = slotted === null ? null : flat(slotted);
-  return h === "" || h === BLANKS[0] || sf === BLANKS[1] || sf === BLANKS[2];
+  const ns = newSpaceSlots(String(html)), nf = ns === null ? null : flat(ns);
+  return h === "" || h === BLANKS[0] || sf === BLANKS[1] || sf === BLANKS[2] || nf === BLANKS[3];
 }
 const foreign = (html) => !ledgerOf(html) && !blank(html);
 const isConflict = (e) => e && (e.code === "conflict" || /conflict/i.test(String(e.message)));

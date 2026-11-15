@@ -14,6 +14,7 @@ An agent with this skill writes a document on a space while the person watches: 
 | `docs/references/page.html` | The starter page: no script, light and dark, A4 print |
 | `docs/assets/docs.js` | Every command the agent runs, so a person allows one script |
 | `docs/assets/blank-live-link*.html` | Spacesheep's working-on-it page, with and without its description: a space showing it counts as blank |
+| `docs/assets/blank-new-space.html` | The empty sheet a space starts as from New space or Start from blank: a space showing it counts as blank |
 | `docs/spacesheep.yaml` | The skill's title, emoji and tags on Spacesheep |
 | `tests/` | The repo's tests: `node tests/run.js`, no dependencies |
 
