@@ -496,7 +496,7 @@ const COMMANDS = {
     }
     if (foreign(html)) {
       ctx.io.push({ status: "Stopped: this space holds another page", stopped: true });
-      throw new Error("start: this space holds a page someone made, and it's never written over. Nothing changed. Ask the person: use a new page (start --new, in a new folder), or tell you what to do with theirs");
+      throw new Error("start: this space holds a page someone made, and it's never written over. Nothing changed. Ask the person whether to write it on a new page (start --new, in a new folder). If they say to write on this page anyway, tell them you can't replace a page that has content yet, and write it on a new page all the same. Never save over their page any other way");
     }
     ctx.log("\n" + fs.readFileSync(OUTLINE, "utf8"));
     return 0;
@@ -511,7 +511,7 @@ const COMMANDS = {
     if (!title || !headings.length) throw new Error("outline: give the title, then every heading");
     const r = ctx.io.read(), html = r.files["index.html"] || "";
     if (ledgerOf(html)) throw new Error("outline: this space has its outline already. Write its sections; for another document, start --new in a new folder");
-    if (foreign(html)) throw new Error("outline: this space holds a page someone made, and it's never written over. Nothing changed. Ask the person: use a new page (start --new, in a new folder), or tell you what to do with theirs");
+    if (foreign(html)) throw new Error("outline: this space holds a page someone made, and it's never written over. Nothing changed. Ask the person whether to write it on a new page (start --new, in a new folder). If they say to write on this page anyway, tell them you can't replace a page that has content yet, and write it on a new page all the same. Never save over their page any other way");
     const page = buildPage(fs.readFileSync(STARTER, "utf8"), title, headings, pages);
     const a = ctx.io.push({ html: page });
     ctx.io.save({ parent: r.version, label: "Outline", files: [{ path: "index.html", content: page }] });

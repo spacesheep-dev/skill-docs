@@ -141,8 +141,12 @@ module.exports = function ({ test, ROOT }) {
     const s = fakeSpace({ "index.html": `<!doctype html><html><head><title>x</title></head><body><h1>Mine</h1>${words}</body></html>` });
     const before = page(s);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-test-"));
-    assert.notStrictEqual(run(s, ["start", s.id], { dir }).code, 0);
-    assert.notStrictEqual(run(s, ["outline", "Title", "One"], { dir }).code, 0);
+    const refusals = [run(s, ["start", s.id], { dir }), run(s, ["outline", "Title", "One"], { dir })];
+    for (const r of refusals) {
+      assert.notStrictEqual(r.code, 0);
+      // The refusal says what to do with the answer, so a yes to "this page" never sends the agent around the skill.
+      assert.match(r.out, /If they say to write on this page anyway, tell them you can't replace a page that has content yet, and write it on a new page all the same\. Never save over their page any other way/);
+    }
     assert.strictEqual(page(s), before);
     assert.strictEqual(s.pushes.filter((p) => p.html || p.edits).length, 0, "nothing drawn over it");
     assert.strictEqual(s.saves.length, 0);
