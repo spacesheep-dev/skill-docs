@@ -2,6 +2,12 @@
 
 Each release is a heading with its tag. The release workflow uses the words under it as the release's notes.
 
+## v1.0.3
+
+- Docs pages open in Edit: the page carries `<meta name="ss-edit" content="open">`, so a person who may edit it can type on it straight away, even while Docs is still writing. Docs writes around what they type and never waits for them or undoes it.
+- A page Docs made with v1.0.0 to v1.0.2 gets the line with its next save, once, after the ledger. A page that already has a meta named `ss-edit`, with any value, is left as it is, and reading a page (`start`) never changes it.
+- The folder's hash is `26bdac051742`.
+
 ## v1.0.2
 
 - A blank Docs page that the person has typed a few lines on is now Docs' page to write on. Their lines stay where they typed them, unchanged, and the document is written after them. Docs reads the lines first, as the person's brief, and can use the first one as the document's title.
