@@ -18,5 +18,9 @@ thinking; the headings follow within 30 seconds, and a new section at least ever
 Plan one section, write it, then plan the next: never plan the whole document before its
 first section goes in.
 
+**The person may be typing on the page while you write.** Docs pages open in Edit for
+them. What they type is theirs: `docs.js` writes around it and never changes it, and
+`blocks` shows it. Don't wait for them to stop, and don't repeat or undo what they wrote.
+
 You write text, never the page: `docs.js` turns it into the page, shows it on every open
 tab and saves it. Never deploy, push or edit the page any other way.
