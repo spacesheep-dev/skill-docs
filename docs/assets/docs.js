@@ -6,7 +6,9 @@
 //                                          to write the outline), or a document (its blocks, whose each is, and
 //                                          the rest of the skill). start --new "<title>" makes a new space.
 //   node docs.js -C <folder> outline "<title>" "<heading>" ... [--pages n]   the title and every heading, each
-//                                          section saying "Writing…", on open tabs and saved.
+//                                          section saying "Writing…", on open tabs and saved, after any lines the
+//                                          person typed on the blank page. --their-title in place of the title:
+//                                          their first line is the title.
 //   node docs.js -C <folder> write <n> <file|-> ["<status>"]           section n (0 is the opening, before the
 //                                          first heading) from plain text: shown on open tabs, then saved.
 //   node docs.js -C <folder> blocks [n]    each block: its id, whose it is, its words. Only reads.
@@ -245,14 +247,16 @@ function planBlock(html, id, text, { mine, sigWas }) {
   return { edits, replacements: [{ old_string: secOld, new_string: secNew }, { old_string: LEDGER.exec(html)[0], new_string: ledgerTag(NL) }], kept: [], ledger: NL };
 }
 
-// The starter with this document's title and headings, each with a placeholder.
-function buildPage(starter, title, headings, pages) {
+// The starter with this document's title and headings, each with a placeholder, after whatever its <main> holds
+// (the person's typed lines). theirTitle: the person's first line is the title, so the page gets no title of
+// the tool's, and the tab takes their line's words.
+function buildPage(starter, title, headings, pages, theirTitle) {
   const L = { v: 1, sections: headings.length, pages: pages || null, next: {}, blocks: {} };
   // A placeholder holds no words: the page draws "Writing…" in it only while it's empty, so words a person types
   // into it look like their words, with nothing of the tool's to take off.
   const ph = { tag: "p", html: "" };
   const blk = (b, id, cls) => { L.blocks[id] = blockSig(b); return render(b, id, cls); };
-  const parts = [blk({ tag: "h1", html: esc(title) }, "d-title")];
+  const parts = theirTitle ? [] : [blk({ tag: "h1", html: esc(title) }, "d-title")];
   const secs = ["", ...headings];
   secs.forEach((hd, n) => {
     const key = `d-s${n}`; L.next[key] = 2;
@@ -265,7 +269,7 @@ function buildPage(starter, title, headings, pages) {
   const swaps = [
     [/<title>[\s\S]*?<\/title>/, () => `<title>${esc(title)}</title>`],
     [/<meta name="docs-ledger" content="[^"]*">/, () => ledgerTag(L)],
-    [/(<main data-ss-id="d-doc"[^>]*>)[\s\S]*?(<\/main>)/, (m, a, b) => `${a}\n${parts.join("\n")}\n${b}`],
+    [/(<main data-ss-id="d-doc"[^>]*>)([\s\S]*?)(<\/main>)/, (m, a, kept, b) => `${a}${kept.replace(/\s+$/, "")}\n${parts.join("\n")}\n${b}`],
   ];
   let page = starter;
   for (const [re, to] of swaps) { if (!re.test(page)) throw new Error(`the starter has no ${re.source.slice(0, 30)}`); page = page.replace(re, to); }
@@ -301,13 +305,55 @@ function newSpaceSlots(html) {
   return titles.length === 1 && /<title>[^<]*<\/title>/.test(html) ? html.replace(/<title>[^<]*<\/title>/, "<title>T</title>") : null;
 }
 let BLANKS = null;
+const blanks = () => BLANKS || (BLANKS = [STARTER, BLANK_LIVE_LINK, BLANK_LIVE_LINK_NODESC, BLANK_NEW_SPACE].map((f) => flat(fs.readFileSync(f, "utf8"))));
 function blank(html) {
-  BLANKS = BLANKS || [STARTER, BLANK_LIVE_LINK, BLANK_LIVE_LINK_NODESC, BLANK_NEW_SPACE].map((f) => flat(fs.readFileSync(f, "utf8")));
-  const h = flat(html), slotted = liveLinkSlots(String(html)), sf = slotted === null ? null : flat(slotted);
+  const B = blanks(), h = flat(html), slotted = liveLinkSlots(String(html)), sf = slotted === null ? null : flat(slotted);
   const ns = newSpaceSlots(String(html)), nf = ns === null ? null : flat(ns);
-  return h === "" || h === BLANKS[0] || sf === BLANKS[1] || sf === BLANKS[2] || nf === BLANKS[3];
+  return h === "" || h === B[0] || sf === B[1] || sf === B[2] || nf === B[3];
 }
-const foreign = (html) => !ledgerOf(html) && !blank(html);
+// Docs' starter with lines the person typed on it, and nothing else: the app saves the first line inside the
+// starter's <main>, or in <body> above it (before 16 Nov 2026). The lines are the person's: each stays where it
+// is, as it is, and the document goes after them. Text blocks only, so a picture, a frame, a script, a form, a
+// handler or an id of the tool's makes the page theirs. Answers the lines with their words, or null.
+const TYPED_BLOCK = new Set("p h1 h2 h3 h4 h5 h6 ul ol blockquote pre".split(" "));
+const TYPED_INSIDE = new Set("li p ul ol a b strong i em u s code br span mark sub sup".split(" "));
+// Attributes are read as the browser reads them, quoted or not, and only in forms whose meaning needs no
+// character references worked out: what's written is what the browser sees. An id is letters, digits, - and _,
+// and never one of the tool's (d-…): a rollback that removes d-title would take the person's line with it. A link
+// is http(s), mailto, tel, or within the site, and its only reference is &amp;, so no entity hides a scheme.
+const SAFE_ID = /^[A-Za-z0-9_-]+$/;
+const SAFE_SCHEMES = new Set(["http", "https", "mailto", "tel"]);
+function safeHref(raw) {
+  if (raw.replace(/&amp;/g, "").includes("&")) return false;
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(raw.replace(/&amp;/g, "&").replace(/[\s\u0000-\u001f]+/g, ""));
+  return !scheme || SAFE_SCHEMES.has(scheme[1].toLowerCase());
+}
+function typedOk(html, el, top) {
+  if (!(top ? TYPED_BLOCK : TYPED_INSIDE).has(el.name)) return false;
+  for (const m of html.slice(el.start + el.name.length + 1, el.openEnd - 1).matchAll(/([^\s=\/]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g)) {
+    const name = m[1].toLowerCase(), v = (m[2] || "").replace(/^["']|["']$/g, "");
+    if (!["class", "data-ss-id", "href", "title", "dir", "lang"].includes(name)) return false;
+    if (name === "data-ss-id" && (!SAFE_ID.test(v) || /^d-/i.test(v))) return false;
+    if (name === "href" && (el.name !== "a" || !safeHref(v))) return false;
+  }
+  return el.children.every((c) => typedOk(html, c, false));
+}
+function typedLines(html) {
+  if (ledgerOf(html)) return null;
+  const root = parse(html), bodies = [];
+  walk(root, (e) => { if (e.name === "body") bodies.push(e); });
+  const main = bodies.length === 1 && byId(root, "d-doc");
+  if (!main || main.name !== "main" || main.parent !== bodies[0]) return null;
+  const sib = bodies[0].children, i = sib.indexOf(main);
+  if (i !== sib.length - 1) return null;
+  const lines = [...sib.slice(0, i), ...main.children];
+  if (!lines.length || !lines.every((el) => typedOk(html, el, true))) return null;
+  let rest = html;
+  for (const el of lines.slice().sort((a, b) => b.start - a.start)) rest = rest.slice(0, el.start) + rest.slice(el.end);
+  if (flat(rest) !== blanks()[0]) return null;
+  return lines.map((el) => ({ inMain: el.parent === main, text: words(inner(html, el)) }));
+}
+const foreign = (html) => !ledgerOf(html) && !blank(html) && !typedLines(html);
 const isConflict = (e) => e && (e.code === "conflict" || /conflict/i.test(String(e.message)));
 
 function describe(html, only) {
@@ -498,6 +544,13 @@ const COMMANDS = {
       ctx.io.push({ status: "Stopped: this space holds another page", stopped: true });
       throw new Error("start: this space holds a page someone made, and it's never written over. Nothing changed. Ask the person whether to write it on a new page (start --new, in a new folder). If they say to write on this page anyway, tell them you can't replace a page that has content yet, and write it on a new page all the same. Never save over their page any other way");
     }
+    const said = (typedLines(html) || []).filter((l) => l.text);
+    if (said.length) {
+      const one = said.length === 1;
+      ctx.log(`The page is blank but for ${one ? "a line" : said.length + " lines"} the person typed, quoted below. ${one ? "It's" : "They're"} theirs: ${one ? "it stays" : "they stay"} where ${one ? "it is" : "they are"}, as typed, and the document goes after ${one ? "it" : "them"}. Read ${one ? "it" : "them"} as the brief, in their words:`);
+      for (const l of said.slice(0, 20)) ctx.log(`  ${JSON.stringify(l.text.slice(0, 300))}`);
+      ctx.log(`If their first line is the document's title, write the outline without a title of yours: outline --their-title "<heading>" "<heading>" … Their line stays the title.`);
+    }
     ctx.log("\n" + fs.readFileSync(OUTLINE, "utf8"));
     return 0;
   },
@@ -507,16 +560,36 @@ const COMMANDS = {
     let pages = null;
     const i = args.indexOf("--pages");
     if (i >= 0) { pages = +args[i + 1]; args = args.slice(0, i).concat(args.slice(i + 2)); if (!(pages >= 1)) throw new Error("--pages takes a number: the length the person asked for"); }
-    const title = plain("title", args[0]), headings = args.slice(1).map((h) => plain("heading", h));
-    if (!title || !headings.length) throw new Error("outline: give the title, then every heading");
+    const theirs = args.includes("--their-title");
+    if (theirs) args = args.filter((x) => x !== "--their-title");
+    const title = theirs ? null : plain("title", args[0]), headings = args.slice(theirs ? 0 : 1).map((h) => plain("heading", h));
+    if ((!theirs && !title) || !headings.length) throw new Error("outline: give the title, then every heading (or --their-title, then every heading, when the person's first line is the title)");
     const r = ctx.io.read(), html = r.files["index.html"] || "";
     if (ledgerOf(html)) throw new Error("outline: this space has its outline already. Write its sections; for another document, start --new in a new folder");
     if (foreign(html)) throw new Error("outline: this space holds a page someone made, and it's never written over. Nothing changed. Ask the person whether to write it on a new page (start --new, in a new folder). If they say to write on this page anyway, tell them you can't replace a page that has content yet, and write it on a new page all the same. Never save over their page any other way");
-    const page = buildPage(fs.readFileSync(STARTER, "utf8"), title, headings, pages);
-    const a = ctx.io.push({ html: page });
-    ctx.io.save({ parent: r.version, label: "Outline", files: [{ path: "index.html", content: page }] });
+    const typed = typedLines(html), first = typed && typed.find((l) => l.text);
+    if (theirs && !first) throw new Error("outline --their-title: the page has no line the person typed to be its title. Give the title, then every heading");
+    const page = buildPage(typed ? html : fs.readFileSync(STARTER, "utf8"), theirs ? first.text : title, headings, pages, theirs);
+    let a;
+    if (typed) {
+      // On the person's lines, the outline goes in after them, as one append on open tabs and exact changes in the
+      // save: their lines are never redrawn or saved over.
+      const m0 = byId(parse(html), "d-doc"), m1 = byId(parse(page), "d-doc"), at = m1.openEnd + inner(html, m0).replace(/\s+$/, "").length;
+      const edit = { anchor: "d-doc", op: "append_into", html: page.slice(at, m1.closeStart).trim() };
+      const swap = (re) => ({ old_string: re.exec(html)[0], new_string: re.exec(page)[0] });
+      a = ctx.io.push({ edits: [edit] });
+      try { ctx.io.save({ parent: r.version, label: "Outline", replacements: [swap(/<title>[\s\S]*?<\/title>/), swap(LEDGER), { old_string: outer(html, m0), new_string: outer(page, m1) }], live_patch: [edit] }); }
+      catch (e) {
+        if (!isConflict(e)) throw e;
+        ctx.io.push({ edits: [...(theirs ? [] : ["d-title"]), ...["", ...headings].map((_, k) => `d-s${k}`)].map((id) => ({ anchor: id, op: "remove" })) });
+        throw new Error("outline: the person changed the page while the outline went in, so nothing was saved, and open tabs show their page again. Run outline again");
+      }
+    } else {
+      a = ctx.io.push({ html: page });
+      ctx.io.save({ parent: r.version, label: "Outline", files: [{ path: "index.html", content: page }] });
+    }
     ctx.io.push({ status: "Writing the opening" }); // a save takes the work card down: the work isn't done
-    ctx.log(`the title and ${headings.length} headings are on the page${a && a.tabs_open !== undefined ? ` (${a.tabs_open} tab${a.tabs_open === 1 ? "" : "s"} open)` : ""}, and saved`);
+    ctx.log(`${theirs ? "under the person's title, " : "the title and "}${headings.length} headings are on the page${a && a.tabs_open !== undefined ? ` (${a.tabs_open} tab${a.tabs_open === 1 ? "" : "s"} open)` : ""}, and saved`);
     ctx.log("\n" + fs.readFileSync(WRITING, "utf8"));
     return 0;
   },

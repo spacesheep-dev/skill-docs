@@ -377,7 +377,7 @@ module.exports = function ({ test, ROOT }) {
       "<html><head></head><body></body></html>A loose word",
       EMPTY,
       '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>docs d1</title></head><body></body></html>',
-      starter.replace("</main>", "<p>Mine.</p></main>"),
+      starter.replace("</main>", '<p>Mine.</p><img src="x.png"></main>'), // typed lines are written around; a picture isn't one
       llA.replace('<p class="ll-what"', '<p>Mine.</p><p class="ll-what"'),
       llA.replace(/(<p class="ll-what"[^>]*>)[^<]*/, "$1<b>Bold title</b>"),
       llA.replace("</body>", '<img src="plan.png"></body>'),
