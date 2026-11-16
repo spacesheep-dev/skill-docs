@@ -317,12 +317,24 @@ function blank(html) {
 // handler or an id of the tool's makes the page theirs. Answers the lines with their words, or null.
 const TYPED_BLOCK = new Set("p h1 h2 h3 h4 h5 h6 ul ol blockquote pre".split(" "));
 const TYPED_INSIDE = new Set("li p ul ol a b strong i em u s code br span mark sub sup".split(" "));
+// Attributes are read as the browser reads them, quoted or not, and only in forms whose meaning needs no
+// character references worked out: what's written is what the browser sees. An id is letters, digits, - and _,
+// and never one of the tool's (d-…): a rollback that removes d-title would take the person's line with it. A link
+// is http(s), mailto, tel, or within the site, and its only reference is &amp;, so no entity hides a scheme.
+const SAFE_ID = /^[A-Za-z0-9_-]+$/;
+const SAFE_SCHEMES = new Set(["http", "https", "mailto", "tel"]);
+function safeHref(raw) {
+  if (raw.replace(/&amp;/g, "").includes("&")) return false;
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(raw.replace(/&amp;/g, "&").replace(/[\s\u0000-\u001f]+/g, ""));
+  return !scheme || SAFE_SCHEMES.has(scheme[1].toLowerCase());
+}
 function typedOk(html, el, top) {
-  if (!(top ? TYPED_BLOCK : TYPED_INSIDE).has(el.name) || (el.id && el.id.startsWith("d-"))) return false;
+  if (!(top ? TYPED_BLOCK : TYPED_INSIDE).has(el.name)) return false;
   for (const m of html.slice(el.start + el.name.length + 1, el.openEnd - 1).matchAll(/([^\s=\/]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g)) {
     const name = m[1].toLowerCase(), v = (m[2] || "").replace(/^["']|["']$/g, "");
     if (!["class", "data-ss-id", "href", "title", "dir", "lang"].includes(name)) return false;
-    if (name === "href" && (el.name !== "a" || /^(javascript|data|vbscript):/i.test(decode(v).replace(/[\s\u0000-\u001f]+/g, "")))) return false;
+    if (name === "data-ss-id" && (!SAFE_ID.test(v) || /^d-/i.test(v))) return false;
+    if (name === "href" && (el.name !== "a" || !safeHref(v))) return false;
   }
   return el.children.every((c) => typedOk(html, c, false));
 }

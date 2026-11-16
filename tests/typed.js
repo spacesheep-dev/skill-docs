@@ -102,6 +102,15 @@ module.exports = function ({ test, ROOT }) {
     assert.ok(s.files["index.html"].includes(`${line}\n${later}\n<h1 data-ss-id="d-title">T</h1>`));
   });
 
+  test("plain links and the ids staging and the app give a typed line stay typed lines, as they are", () => {
+    const lines = [
+      '<p data-ss-id="auto-p-1a2b">See <a href="https://example.com/plan?a=1&amp;b=2">the plan</a> and <a href="mailto:me@example.com">mail me</a>.</p>',
+      "<p data-ss-id=auto-p-9c>Back to <a href=\"#top\">the top</a>, <a href='/notes'>the notes</a> or <a href=\"tel:+441234567\">ring</a>.</p>",
+    ];
+    const { runs } = walk(inMain(lines.join("\n")), lines, ["outline", "A letter", "One", "Two"]);
+    assert.match(runs[0].out, /blank but for 2 lines/);
+  });
+
   test("the starter with anything but typed lines is still the person's: refused, and left as it was", () => {
     const off = [
       inMain('<p>Mine.</p>\n<img src="plan.png">'),
@@ -112,6 +121,19 @@ module.exports = function ({ test, ROOT }) {
       inMain('<p><a href="javascript:alert(1)">Mine.</a></p>'),
       inMain('<p><a href=" java\tscript:alert(1)">Mine.</a></p>'),
       inMain('<p data-ss-id="d-title">Mine.</p>'),
+      // An id or a link read as the browser reads it: unquoted, or behind a character reference.
+      inMain("<p data-ss-id=d-title>Mine.</p>"),
+      inMain('<p data-ss-id="d&#45;title">Mine.</p>'),
+      inMain('<p data-ss-id="&#x64;-s0">Mine.</p>'),
+      inMain("<p DATA-SS-ID='D-s0'>Mine.</p>"),
+      inMain("<p>Mine, <b data-ss-id=d-title>bold</b>.</p>"),
+      inMain('<p data-ss-id="auto-p-1" data-ss-id="d-title">Mine.</p>'),
+      inMain('<p><a href="javascript&colon;alert(1)">Mine.</a></p>'),
+      inMain('<p><a href="&#106;avascript:alert(1)">Mine.</a></p>'),
+      inMain('<p><a href="java&Tab;script:alert(1)">Mine.</a></p>'),
+      inMain("<p><a href=javascript:alert(1)>Mine.</a></p>"),
+      inMain('<p><a href="data:text/html,x">Mine.</a></p>'),
+      inMain('<p><a href="ftp://example.com/x">Mine.</a></p>'),
       inMain("<div>Mine.</div>"),
       inMain("<table><tr><td>Mine.</td></tr></table>"),
       inMain("<p>Mine.</p>\nA loose word"),
