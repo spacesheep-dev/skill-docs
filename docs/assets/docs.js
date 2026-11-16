@@ -35,6 +35,7 @@ const WRITING = path.join(__dirname, "..", "references", "writing.md");
 const OUTLINE = path.join(__dirname, "..", "references", "outline.md");
 const BLANK_LIVE_LINK = path.join(__dirname, "blank-live-link.html"), BLANK_LIVE_LINK_NODESC = path.join(__dirname, "blank-live-link-nodesc.html");
 const BLANK_NEW_SPACE = path.join(__dirname, "blank-new-space.html");
+const BLANK_STARTER_1 = path.join(__dirname, "blank-starter-1.0.html");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PLACEHOLDER = "Writing…";
 const WORDS_FAR = 600; // words no A4 page of the starter holds
@@ -155,6 +156,25 @@ function ledgerMeta(html) {
 const LEDGER = { exec: (html) => { const t = ledgerMeta(html); return t ? [t] : null; } };
 function ledgerOf(html) { const t = ledgerMeta(html), m = t && /content="([^"]*)"/.exec(t); if (!m) return null; try { return JSON.parse(decode(m[1])); } catch { return null; } }
 const ledgerTag = (L) => `<meta name="docs-ledger" content="${esc(JSON.stringify(L))}">`;
+// The page opens in Edit: Spacesheep's frame reads <meta name="ss-edit" content="open"> when the page loads, and
+// opens it in Edit for a person who may edit it (16 Nov 2026). The starter carries it. A page of this skill made
+// before then gets it with its next save, as part of the ledger change every save makes, right after the ledger
+// in its head; it takes effect the next time the page is opened. A page with a meta of that name already, with
+// any value, keeps it as it is. start only reads, so it never adds it.
+const EDIT_META = '<meta name="ss-edit" content="open">';
+function hasEditMeta(html) {
+  let n = 0;
+  walk(parse(html), (e) => { if (e.name === "meta" && /\sname\s*=\s*(["']?)ss-edit\1(?=[\s\/>])/i.test(html.slice(e.start, e.openEnd))) n++; });
+  return n > 0;
+}
+function editAdd(html) {
+  const t = ledgerMeta(html);
+  if (!t || hasEditMeta(html)) return "";
+  let inHead = false;
+  walk(parse(html), (e) => { if (e.name === "meta" && outer(html, e) === t && e.parent.name === "head") inHead = true; });
+  return inHead ? "\n" + EDIT_META : "";
+}
+const ledgerSwap = (html, NL) => ({ old_string: LEDGER.exec(html)[0], new_string: ledgerTag(NL) + editAdd(html) });
 
 // Whose each block of a section is, and where the section is.
 function sectionView(html, root, L, n) {
@@ -212,7 +232,7 @@ function planWrite(html, n, text) {
   for (const [a, b, h] of splices.sort((x, y) => y[0] - x[0])) secNew = secNew.slice(0, a - v.sec.start) + h + secNew.slice(b - v.sec.start);
   const replacements = [];
   if (secNew !== secOld) replacements.push({ old_string: secOld, new_string: secNew });
-  replacements.push({ old_string: LEDGER.exec(html)[0], new_string: ledgerTag(NL) });
+  replacements.push(ledgerSwap(html, NL));
   return { edits, replacements, kept, changed: edits.length, ledger: NL };
 }
 
@@ -244,7 +264,7 @@ function planBlock(html, id, text, { mine, sigWas }) {
     if (rest.length) edits.push({ anchor: id, op: "insert_after", html: rest.join("\n") });
   }
   const secOld = outer(html, sec), secNew = secOld.slice(0, rep[0] - sec.start) + rep[2] + secOld.slice(rep[1] - sec.start);
-  return { edits, replacements: [{ old_string: secOld, new_string: secNew }, { old_string: LEDGER.exec(html)[0], new_string: ledgerTag(NL) }], kept: [], ledger: NL };
+  return { edits, replacements: [{ old_string: secOld, new_string: secNew }, ledgerSwap(html, NL)], kept: [], ledger: NL };
 }
 
 // The starter with this document's title and headings, each with a placeholder, after whatever its <main> holds
@@ -268,7 +288,7 @@ function buildPage(starter, title, headings, pages, theirTitle) {
   });
   const swaps = [
     [/<title>[\s\S]*?<\/title>/, () => `<title>${esc(title)}</title>`],
-    [/<meta name="docs-ledger" content="[^"]*">/, () => ledgerTag(L)],
+    [/<meta name="docs-ledger" content="[^"]*">/, () => ledgerTag(L) + editAdd(starter)],
     [/(<main data-ss-id="d-doc"[^>]*>)([\s\S]*?)(<\/main>)/, (m, a, kept, b) => `${a}${kept.replace(/\s+$/, "")}\n${parts.join("\n")}\n${b}`],
   ];
   let page = starter;
@@ -285,7 +305,8 @@ const spaceOf = (ctx) => { try { return fs.readFileSync(spaceFile(ctx.dir), "utf
 // Blank is a short closed list of whole pages, compared after dropping whitespace: an empty file, this skill's
 // starter before any outline, staging's "working on it" page (live_link, saved 14 Nov 2026) in its two forms,
 // with a description line and without, whose title and description are plain-text slots, and the app's empty
-// sheet a space starts as from New space or Start from blank (saved 15 Nov 2026), whose title is a plain-text slot. Everything else is the person's page, however empty it looks: a wrong "not
+// sheet a space starts as from New space or Start from blank (saved 15 Nov 2026), whose title is a plain-text slot,
+// and the starter as Docs 1.0.0 to 1.0.2 made it, before it opened in Edit. Everything else is the person's page, however empty it looks: a wrong "not
 // blank" costs one question; a wrong "blank" deletes someone's work.
 const flat = (t) => String(t).replace(/\s+/g, "");
 // Each slot is text only and stays where it is, in its exact tag; nothing is taken out before the comparison.
@@ -305,13 +326,14 @@ function newSpaceSlots(html) {
   return titles.length === 1 && /<title>[^<]*<\/title>/.test(html) ? html.replace(/<title>[^<]*<\/title>/, "<title>T</title>") : null;
 }
 let BLANKS = null;
-const blanks = () => BLANKS || (BLANKS = [STARTER, BLANK_LIVE_LINK, BLANK_LIVE_LINK_NODESC, BLANK_NEW_SPACE].map((f) => flat(fs.readFileSync(f, "utf8"))));
+const blanks = () => BLANKS || (BLANKS = [STARTER, BLANK_LIVE_LINK, BLANK_LIVE_LINK_NODESC, BLANK_NEW_SPACE, BLANK_STARTER_1].map((f) => flat(fs.readFileSync(f, "utf8"))));
+const isStarter = (f) => f === blanks()[0] || f === blanks()[4];
 function blank(html) {
   const B = blanks(), h = flat(html), slotted = liveLinkSlots(String(html)), sf = slotted === null ? null : flat(slotted);
   const ns = newSpaceSlots(String(html)), nf = ns === null ? null : flat(ns);
-  return h === "" || h === B[0] || sf === B[1] || sf === B[2] || nf === B[3];
+  return h === "" || isStarter(h) || sf === B[1] || sf === B[2] || nf === B[3];
 }
-// Docs' starter with lines the person typed on it, and nothing else: the app saves the first line inside the
+// Docs' starter (either form) with lines the person typed on it, and nothing else: the app saves the first line inside the
 // starter's <main>, or in <body> above it (before 16 Nov 2026). The lines are the person's: each stays where it
 // is, as it is, and the document goes after them. Text blocks only, so a picture, a frame, a script, a form, a
 // handler or an id of the tool's makes the page theirs. Answers the lines with their words, or null.
@@ -350,7 +372,7 @@ function typedLines(html) {
   if (!lines.length || !lines.every((el) => typedOk(html, el, true))) return null;
   let rest = html;
   for (const el of lines.slice().sort((a, b) => b.start - a.start)) rest = rest.slice(0, el.start) + rest.slice(el.end);
-  if (flat(rest) !== blanks()[0]) return null;
+  if (!isStarter(flat(rest))) return null;
   return lines.map((el) => ({ inMain: el.parent === main, text: words(inner(html, el)) }));
 }
 const foreign = (html) => !ledgerOf(html) && !blank(html) && !typedLines(html);
@@ -436,7 +458,7 @@ function closeRun(ctx, r, html, L) {
   const NL = Object.assign({}, L, { checked: true });
   const live = noopPatch(html, parse(html), L);
   try {
-    ctx.io.save(Object.assign({ parent: r.version, label: "Checked", replacements: [{ old_string: span, new_string: ledgerTag(NL) + span.slice(tag.length) }] }, live ? { live_patch: [live] } : {}));
+    ctx.io.save(Object.assign({ parent: r.version, label: "Checked", replacements: [{ old_string: span, new_string: ledgerTag(NL) + editAdd(html) + span.slice(tag.length) }] }, live ? { live_patch: [live] } : {}));
     return true;
   } catch (e) { if (!isConflict(e)) throw e; return false; }
 }
@@ -578,7 +600,7 @@ const COMMANDS = {
       const edit = { anchor: "d-doc", op: "append_into", html: page.slice(at, m1.closeStart).trim() };
       const swap = (re) => ({ old_string: re.exec(html)[0], new_string: re.exec(page)[0] });
       a = ctx.io.push({ edits: [edit] });
-      try { ctx.io.save({ parent: r.version, label: "Outline", replacements: [swap(/<title>[\s\S]*?<\/title>/), swap(LEDGER), { old_string: outer(html, m0), new_string: outer(page, m1) }], live_patch: [edit] }); }
+      try { ctx.io.save({ parent: r.version, label: "Outline", replacements: [swap(/<title>[\s\S]*?<\/title>/), { old_string: LEDGER.exec(html)[0], new_string: LEDGER.exec(page)[0] + editAdd(html) }, { old_string: outer(html, m0), new_string: outer(page, m1) }], live_patch: [edit] }); }
       catch (e) {
         if (!isConflict(e)) throw e;
         ctx.io.push({ edits: [...(theirs ? [] : ["d-title"]), ...["", ...headings].map((_, k) => `d-s${k}`)].map((id) => ({ anchor: id, op: "remove" })) });
@@ -657,8 +679,9 @@ const COMMANDS = {
       NL.proposals = NL.proposals || {};
       NL.proposals[cid] = { changes: [{ block: id, sig: sig(html, el), text: String(text) }] };
       try {
-        ctx.io.save({ parent: r.version, label: `Proposal on ${id}`, replacements: [{ old_string: LEDGER.exec(html)[0], new_string: ledgerTag(NL) }] });
-        afterSave(ctx, html.replace(LEDGER.exec(html)[0], () => ledgerTag(NL)), null);
+        const swap = ledgerSwap(html, NL);
+        ctx.io.save({ parent: r.version, label: `Proposal on ${id}`, replacements: [swap] });
+        afterSave(ctx, html.replace(swap.old_string, () => swap.new_string), null);
         ctx.log(`proposed on ${id}: comment ${cid.slice(0, 8)}. Nothing changes until the person answers yes there; then apply ${cid.slice(0, 8)}`);
         return 0;
       } catch (e) { if (!isConflict(e)) throw e; ctx.io.resolve(cid); }
@@ -683,7 +706,7 @@ const COMMANDS = {
     });
     P.changes.forEach((ch, i) => commit(ctx, `${ch.block}, as proposed`, null, (html) => {
       const p = planBlock(html, ch.block, ch.text, { sigWas: ch.sig });
-      if (i === P.changes.length - 1) { delete p.ledger.proposals[c.id]; p.replacements[p.replacements.length - 1] = { old_string: LEDGER.exec(html)[0], new_string: ledgerTag(p.ledger) }; }
+      if (i === P.changes.length - 1) { delete p.ledger.proposals[c.id]; p.replacements[p.replacements.length - 1] = ledgerSwap(html, p.ledger); }
       return p;
     }));
     ctx.io.comment({ reply_to: c.id, body: AGENT + "Changed, as you said yes to." });
