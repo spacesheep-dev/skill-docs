@@ -2,6 +2,12 @@
 
 Each release is a heading with its tag. The release workflow uses the words under it as the release's notes.
 
+## v1.0.2
+
+- A blank Docs page that the person has typed a few lines on is now Docs' page to write on. Their lines stay where they typed them, unchanged, and the document is written after them. Docs reads the lines first, as the person's brief, and can use the first one as the document's title.
+- Only typed text counts: paragraphs, headings, lists, quotes and code, with plain links and marks. A picture, an embed, a script, a style, a link to anything but a web, mail or phone address, or an id of Docs' own still makes the page the person's, and Docs asks first.
+- The folder's hash is `15ac30c4a831`.
+
 ## v1.0.1
 
 - A space made with New space or Start from blank holds the app's empty sheet; Docs now counts it as blank and writes there without asking. Anything added to that sheet still makes the page the person's.
