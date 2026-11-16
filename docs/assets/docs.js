@@ -162,10 +162,52 @@ const ledgerTag = (L) => `<meta name="docs-ledger" content="${esc(JSON.stringify
 // in its head; it takes effect the next time the page is opened. A page with a meta of that name already, with
 // any value, keeps it as it is. start only reads, so it never adds it.
 const EDIT_META = '<meta name="ss-edit" content="open">';
+// An element's attributes as the browser reads its start tag: names lower-cased (ASCII only), the first of a
+// repeated name kept, values in either quote or none, separated by whitespace or "/". Values are as written;
+// attrText decodes them.
+const HTML_WS = "\t\n\f\r ";
+function attrsOf(html, el) {
+  const s = html.slice(el.start + 1 + el.name.length, el.openEnd - 1), out = new Map(), ws = (c) => HTML_WS.includes(c);
+  let i = 0;
+  while (i < s.length) {
+    while (i < s.length && (ws(s[i]) || s[i] === "/")) i++;
+    if (i >= s.length) break;
+    let j = i + 1; // a name's first character can be "="
+    while (j < s.length && !ws(s[j]) && s[j] !== "/" && s[j] !== "=") j++;
+    const name = s.slice(i, j).replace(/[A-Z]/g, (c) => c.toLowerCase());
+    i = j;
+    while (i < s.length && ws(s[i])) i++;
+    let value = "";
+    if (s[i] === "=") {
+      i++;
+      while (i < s.length && ws(s[i])) i++;
+      if (s[i] === '"' || s[i] === "'") { const k = s.indexOf(s[i], i + 1), end = k < 0 ? s.length : k; value = s.slice(i + 1, end); i = end + 1; }
+      else { let k = i; while (k < s.length && !ws(s[k])) k++; value = s.slice(i, k); i = k; }
+    }
+    if (!out.has(name)) out.set(name, value);
+  }
+  return out;
+}
+// A value as the browser decodes it, as far as comparing it with a plain ASCII name needs: numeric references,
+// with or without their ";", become their character (anything outside ASCII, or 0, as U+FFFD). No named reference
+// stands for a letter, a digit or "-", so one is left as written: a value holding one equals no plain name, as in
+// the browser.
+const attrText = (v) => v.replace(/&#(?:[xX]([0-9a-fA-F]+)|([0-9]+));?/g, (m, h, d) => { const n = h ? parseInt(h, 16) : parseInt(d, 10); return n > 0 && n < 0x80 ? String.fromCharCode(n) : "\uFFFD"; });
+// A meta named ss-edit as the browser sees it: an element whose tag name is exactly "meta", whose name attribute
+// (the first one) decodes to ss-edit, compared ASCII case-insensitively as meta names are. One inside a <template>
+// isn't in the page; one in a comment or in raw text (a script, a style) isn't an element.
 function hasEditMeta(html) {
-  let n = 0;
-  walk(parse(html), (e) => { if (e.name === "meta" && /\sname\s*=\s*(["']?)ss-edit\1(?=[\s\/>])/i.test(html.slice(e.start, e.openEnd))) n++; });
-  return n > 0;
+  let found = false;
+  const look = (el) => { for (const c of el.children) {
+    if (c.name === "template") continue;
+    if (c.name === "meta" && HTML_WS.concat("/>").includes(html[c.start + 5])) {
+      const v = attrsOf(html, c).get("name");
+      if (v !== undefined && attrText(v).replace(/[A-Z]/g, (x) => x.toLowerCase()) === "ss-edit") found = true;
+    }
+    look(c);
+  } };
+  look(parse(html));
+  return found;
 }
 function editAdd(html) {
   const t = ledgerMeta(html);

@@ -87,13 +87,31 @@ module.exports = function ({ test, ROOT }) {
   });
 
   test("a meta of that name the page has already, with any value or quoting, stays as it is and gets no second", () => {
-    for (const has of ['<meta name="ss-edit" content="closed">', "<meta name='ss-edit' content='open'>", '<meta content="open" name=ss-edit>', '<meta name="SS-EDIT" content="open">']) {
+    for (const has of ['<meta name="ss-edit" content="closed">', "<meta name='ss-edit' content='open'>", '<meta content="open" name=ss-edit>', '<meta name="SS-EDIT" content="open">',
+      // After b6f72ff's review: the name as the browser decodes it, and the first name attribute only.
+      '<meta name="ss&#45;edit" content="closed">', '<meta name="ss&#x2D;edit" content="closed">', '<meta name="ss&#45edit" content="closed">', '<meta name=&#115;s-edit content="closed">',
+      '<META NAME="ss-edit" CONTENT="closed">', '<meta/name="ss-edit"/content="closed"/>', '<meta name = "ss-edit" content="closed">', '<meta name="ss-edit" name="description" content="closed">']) {
       const { s, dir } = legacy();
       s.person((h) => h.replace("</head>", has + "\n</head>"));
+      const legacyPage = s.files["index.html"].replace(has, "");
       ok(s, dir, ["write", "1", "-"], "Again.");
       ok(s, dir, ["done"]);
-      assert.strictEqual(count(s.files["index.html"].toLowerCase(), "ss-edit"), 1, has);
+      assert.strictEqual(count(s.files["index.html"].toLowerCase(), "<meta"), count(legacyPage.toLowerCase(), "<meta") + 1, `${has}: no meta added`);
       assert.ok(s.files["index.html"].includes(has), `${has} as it was`);
+    }
+  });
+
+  test("after b6f72ff's review: ss-edit anywhere but a meta's own name isn't the meta, and the page still gets the real one", () => {
+    for (const other of [`<meta name="description" content='Use name="ss-edit" for editing'>`, '<meta property="og:x" content="name=ss-edit">', '<meta data-name="ss-edit" content="closed">',
+      '<meta name="ss-edit-x" content="closed">', '<meta name="description" name="ss-edit" content="closed">', '<meta name="ss&amp;edit" content="closed">', '<meta name="ss&#8208;edit" content="closed">',
+      '<meta name="ss-ed&#304;t" content="closed">', '<metax name="ss-edit" content="closed">', '<template><meta name="ss-edit" content="closed"></template>']) {
+      const { s, dir } = legacy();
+      s.person((h) => h.replace("</head>", other + "\n</head>"));
+      ok(s, dir, ["write", "1", "-"], "Again.");
+      const h = s.files["index.html"];
+      assert.strictEqual(count(h, META), 1, `${other}: the real one added`);
+      assert.match(h, /<meta name="docs-ledger" content="[^"]*">\n<meta name="ss-edit" content="open">\n/, other);
+      assert.ok(h.includes(other), `${other} as it was`);
     }
   });
 
